@@ -61,9 +61,9 @@ export async function faucetMintPublic(
       programName: 'token_registry.aleo',
       functionName: 'mint_public',
       inputs,
-      fee: 1_500_000,
+      priorityFee: 1_500_000,
       privateFee: false,
-    })
+    } as any)
 
     console.log('[FaucetMint] TX submitted:', txId)
     return typeof txId === 'string' ? txId : String(txId)

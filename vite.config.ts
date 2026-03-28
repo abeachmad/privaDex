@@ -12,6 +12,10 @@ export default defineConfig({
       '@': '/src',
     },
   },
+  build: {
+    // @provablehq/sdk uses top-level await — requires modern targets
+    target: 'esnext',
+  },
   optimizeDeps: {
     exclude: ['@provablehq/sdk'],
     // SDK is excluded (WASM), but its CJS deps must be pre-bundled
@@ -29,8 +33,6 @@ export default defineConfig({
       'Cross-Origin-Embedder-Policy': 'require-corp',
     },
     watch: {
-      // .bg-shell/manifest.json changes every 2s (pi process tracker)
-      // This was causing constant full page reloads
       ignored: ['**/.bg-shell/**', '**/node_modules/**', '**/dist/**', '**/.gsd/**'],
     },
   },

@@ -10,7 +10,7 @@ const FADE_UP = {
   initial: { opacity: 0, y: 24 },
   whileInView: { opacity: 1, y: 0 },
   viewport: { once: true, margin: '-50px' },
-  transition: { duration: 0.6, ease: [0.2, 0, 0, 1] },
+  transition: { duration: 0.6, ease: [0.2, 0, 0, 1] as const },
 }
 
 const STAGGER_CONTAINER = {
@@ -22,7 +22,7 @@ const STAGGER_CONTAINER = {
 const STAGGER_ITEM = {
   initial: { opacity: 0, y: 20 },
   whileInView: { opacity: 1, y: 0 },
-  transition: { duration: 0.5, ease: [0.2, 0, 0, 1] },
+  transition: { duration: 0.5, ease: [0.2, 0, 0, 1] as const },
 }
 
 export default function Landing() {
@@ -89,7 +89,7 @@ export default function Landing() {
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2, duration: 0.6, ease: [0.2, 0, 0, 1] }}
+              transition={{ delay: 0.2, duration: 0.6, ease: [0.2, 0, 0, 1] as const }}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-ghost border border-emerald/10 mb-8"
             >
               <Shield size={13} className="text-emerald" />
@@ -100,7 +100,7 @@ export default function Landing() {
             <motion.h1
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4, duration: 0.8, ease: [0.2, 0, 0, 1] }}
+              transition={{ delay: 0.4, duration: 0.8, ease: [0.2, 0, 0, 1] as const }}
               className="font-display text-5xl sm:text-6xl md:text-7xl lg:text-8xl text-text-primary leading-[0.95] tracking-tight mb-6"
             >
               Trade in
@@ -112,7 +112,7 @@ export default function Landing() {
             <motion.p
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.6, duration: 0.6, ease: [0.2, 0, 0, 1] }}
+              transition={{ delay: 0.6, duration: 0.6, ease: [0.2, 0, 0, 1] as const }}
               className="max-w-xl mx-auto text-lg text-text-secondary leading-relaxed mb-10"
             >
               The first privacy-native decentralized exchange. Three shielded execution venues.
@@ -123,7 +123,7 @@ export default function Landing() {
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.8, duration: 0.5, ease: [0.2, 0, 0, 1] }}
+              transition={{ delay: 0.8, duration: 0.5, ease: [0.2, 0, 0, 1] as const }}
               className="flex flex-col sm:flex-row items-center gap-4"
             >
               <button
