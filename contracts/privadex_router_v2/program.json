@@ -6,21 +6,21 @@
   "leo": "3.5.0",
   "dependencies": [
     {
-      "name": "privadex_amm_native_btcx_v5.aleo",
+      "name": "privadex_amm_native_btcx_v7.aleo",
       "location": "local",
-      "path": "../privadex_amm_native_btcx_v5",
+      "path": "../privadex_amm_native_btcx_v7",
       "edition": null
     },
     {
-      "name": "privadex_amm_native_ethx_v5.aleo",
+      "name": "privadex_amm_native_ethx_v7.aleo",
       "location": "local",
-      "path": "../privadex_amm_native_ethx_v5",
+      "path": "../privadex_amm_native_ethx_v7",
       "edition": null
     },
     {
-      "name": "privadex_amm_btcx_ethx_v4.aleo",
+      "name": "privadex_amm_btcx_ethx_v6.aleo",
       "location": "local",
-      "path": "../privadex_amm_btcx_ethx_v4",
+      "path": "../privadex_amm_btcx_ethx_v6",
       "edition": null
     },
     {

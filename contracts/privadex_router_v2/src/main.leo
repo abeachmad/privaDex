@@ -9,9 +9,9 @@
 
 import credits.aleo;
 import token_registry.aleo;
-import privadex_amm_native_btcx_v5.aleo;
-import privadex_amm_native_ethx_v5.aleo;
-import privadex_amm_btcx_ethx_v4.aleo;
+import privadex_amm_native_btcx_v7.aleo;
+import privadex_amm_native_ethx_v7.aleo;
+import privadex_amm_btcx_ethx_v6.aleo;
 
 program privadex_router_v2.aleo {
 
@@ -153,7 +153,7 @@ program privadex_router_v2.aleo {
         assert(mid_out_aleo <= MAX_U64);
 
         let (change_btcx, aleo_mid, f_hop_1): (token_registry.aleo/Token, credits.aleo/credits, Future) =
-            privadex_amm_native_btcx_v5.aleo/swap_btcx_for_native(
+            privadex_amm_native_btcx_v7.aleo/swap_btcx_for_native(
                 btcx_in,
                 POOL_ALEO_BTCX,
                 amount_in,
@@ -165,7 +165,7 @@ program privadex_router_v2.aleo {
 
         let mid_amount: u64 = aleo_mid.microcredits;
         let (change_aleo, ethx_router_out, f_hop_2): (credits.aleo/credits, token_registry.aleo/Token, Future) =
-            privadex_amm_native_ethx_v5.aleo/swap_native_for_ethx(
+            privadex_amm_native_ethx_v7.aleo/swap_native_for_ethx(
                 aleo_mid,
                 POOL_ALEO_ETHX,
                 mid_amount,
@@ -216,7 +216,7 @@ program privadex_router_v2.aleo {
         assert(mid_out_aleo <= MAX_U64);
 
         let (change_ethx, aleo_mid, f_hop_1): (token_registry.aleo/Token, credits.aleo/credits, Future) =
-            privadex_amm_native_ethx_v5.aleo/swap_ethx_for_native(
+            privadex_amm_native_ethx_v7.aleo/swap_ethx_for_native(
                 ethx_in,
                 POOL_ALEO_ETHX,
                 amount_in,
@@ -228,7 +228,7 @@ program privadex_router_v2.aleo {
 
         let mid_amount: u64 = aleo_mid.microcredits;
         let (change_aleo, btcx_router_out, f_hop_2): (credits.aleo/credits, token_registry.aleo/Token, Future) =
-            privadex_amm_native_btcx_v5.aleo/swap_native_for_btcx(
+            privadex_amm_native_btcx_v7.aleo/swap_native_for_btcx(
                 aleo_mid,
                 POOL_ALEO_BTCX,
                 mid_amount,
@@ -279,7 +279,7 @@ program privadex_router_v2.aleo {
         assert(mid_out_ethx > 0u128);
 
         let (change_aleo, ethx_mid, f_hop_1): (credits.aleo/credits, token_registry.aleo/Token, Future) =
-            privadex_amm_native_ethx_v5.aleo/swap_native_for_ethx(
+            privadex_amm_native_ethx_v7.aleo/swap_native_for_ethx(
                 credits_in,
                 POOL_ALEO_ETHX,
                 amount_in,
@@ -290,7 +290,7 @@ program privadex_router_v2.aleo {
             );
 
         let (change_ethx, btcx_router_out, f_hop_2): (token_registry.aleo/Token, token_registry.aleo/Token, Future) =
-            privadex_amm_btcx_ethx_v4.aleo/swap_ethx_for_btcx(
+            privadex_amm_btcx_ethx_v6.aleo/swap_ethx_for_btcx(
                 ethx_mid,
                 POOL_BTCX_ETHX,
                 mid_out_ethx,
@@ -340,7 +340,7 @@ program privadex_router_v2.aleo {
         assert(mid_out_ethx > 0u128);
 
         let (change_btcx, ethx_mid, f_hop_1): (token_registry.aleo/Token, token_registry.aleo/Token, Future) =
-            privadex_amm_btcx_ethx_v4.aleo/swap_btcx_for_ethx(
+            privadex_amm_btcx_ethx_v6.aleo/swap_btcx_for_ethx(
                 btcx_in,
                 POOL_BTCX_ETHX,
                 amount_in,
@@ -357,7 +357,7 @@ program privadex_router_v2.aleo {
         assert(final_out_aleo <= MAX_U64);
 
         let (change_ethx, aleo_router_out, f_hop_2): (token_registry.aleo/Token, credits.aleo/credits, Future) =
-            privadex_amm_native_ethx_v5.aleo/swap_ethx_for_native(
+            privadex_amm_native_ethx_v7.aleo/swap_ethx_for_native(
                 ethx_mid,
                 POOL_ALEO_ETHX,
                 mid_out_ethx,
@@ -408,7 +408,7 @@ program privadex_router_v2.aleo {
         assert(mid_out_btcx > 0u128);
 
         let (change_aleo, btcx_mid, f_hop_1): (credits.aleo/credits, token_registry.aleo/Token, Future) =
-            privadex_amm_native_btcx_v5.aleo/swap_native_for_btcx(
+            privadex_amm_native_btcx_v7.aleo/swap_native_for_btcx(
                 credits_in,
                 POOL_ALEO_BTCX,
                 amount_in,
@@ -419,7 +419,7 @@ program privadex_router_v2.aleo {
             );
 
         let (change_btcx, ethx_router_out, f_hop_2): (token_registry.aleo/Token, token_registry.aleo/Token, Future) =
-            privadex_amm_btcx_ethx_v4.aleo/swap_btcx_for_ethx(
+            privadex_amm_btcx_ethx_v6.aleo/swap_btcx_for_ethx(
                 btcx_mid,
                 POOL_BTCX_ETHX,
                 mid_out_btcx,
@@ -469,7 +469,7 @@ program privadex_router_v2.aleo {
         assert(mid_out_btcx > 0u128);
 
         let (change_ethx, btcx_mid, f_hop_1): (token_registry.aleo/Token, token_registry.aleo/Token, Future) =
-            privadex_amm_btcx_ethx_v4.aleo/swap_ethx_for_btcx(
+            privadex_amm_btcx_ethx_v6.aleo/swap_ethx_for_btcx(
                 ethx_in,
                 POOL_BTCX_ETHX,
                 amount_in,
@@ -486,7 +486,7 @@ program privadex_router_v2.aleo {
         assert(final_out_aleo <= MAX_U64);
 
         let (change_btcx, aleo_router_out, f_hop_2): (token_registry.aleo/Token, credits.aleo/credits, Future) =
-            privadex_amm_native_btcx_v5.aleo/swap_btcx_for_native(
+            privadex_amm_native_btcx_v7.aleo/swap_btcx_for_native(
                 btcx_mid,
                 POOL_ALEO_BTCX,
                 mid_out_btcx,

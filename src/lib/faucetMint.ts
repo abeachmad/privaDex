@@ -8,6 +8,8 @@
 
 const RPC_URL = import.meta.env.VITE_RPC_URL || 'https://api.explorer.provable.com/v1'
 const FAUCET_PRIVATE_KEY = import.meta.env.VITE_FAUCET_PRIVATE_KEY
+// ProgramManager priority fees are specified in ALEO credits, not microcredits.
+const FAUCET_PRIORITY_FEE_CREDITS = 1.5
 
 // Lazy-load the heavy SDK only when needed
 let sdkPromise: Promise<typeof import('@provablehq/sdk')> | null = null
@@ -61,7 +63,7 @@ export async function faucetMintPublic(
       programName: 'token_registry.aleo',
       functionName: 'mint_public',
       inputs,
-      priorityFee: 1_500_000,
+      priorityFee: FAUCET_PRIORITY_FEE_CREDITS,
       privateFee: false,
     } as any)
 

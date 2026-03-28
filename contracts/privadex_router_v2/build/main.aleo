@@ -1,8 +1,8 @@
 import credits.aleo;
 import token_registry.aleo;
-import privadex_amm_native_btcx_v5.aleo;
-import privadex_amm_native_ethx_v5.aleo;
-import privadex_amm_btcx_ethx_v4.aleo;
+import privadex_amm_native_btcx_v7.aleo;
+import privadex_amm_native_ethx_v7.aleo;
+import privadex_amm_btcx_ethx_v6.aleo;
 program privadex_router_v2.aleo;
 
 record RouteIntent:
@@ -143,8 +143,8 @@ function swap_btcx_for_ethx_via_aleo:
     lte r19 18446744073709551615u128 into r21;
     assert.eq r21 true;
     cast r19 into r22 as u64;
-    call privadex_amm_native_btcx_v5.aleo/swap_btcx_for_native r0 8u64 r1 r2 r3 r4 r22 into r23 r24 r25;
-    call privadex_amm_native_ethx_v5.aleo/swap_native_for_ethx r24 9u64 r24.microcredits r5 r6 r7 r8 into r26 r27 r28;
+    call privadex_amm_native_btcx_v7.aleo/swap_btcx_for_native r0 8u64 r1 r2 r3 r4 r22 into r23 r24 r25;
+    call privadex_amm_native_ethx_v7.aleo/swap_native_for_ethx r24 9u64 r24.microcredits r5 r6 r7 r8 into r26 r27 r28;
     call token_registry.aleo/transfer_private self.signer r27.amount r27 into r29 r30 r31;
     async swap_btcx_for_ethx_via_aleo 5u64 6u64 r1 r30.amount r25 r28 r31 into r32;
     output r23 as token_registry.aleo/Token.record;
@@ -156,8 +156,8 @@ finalize swap_btcx_for_ethx_via_aleo:
     input r1 as u64.public;
     input r2 as u128.public;
     input r3 as u128.public;
-    input r4 as privadex_amm_native_btcx_v5.aleo/swap_btcx_for_native.future;
-    input r5 as privadex_amm_native_ethx_v5.aleo/swap_native_for_ethx.future;
+    input r4 as privadex_amm_native_btcx_v7.aleo/swap_btcx_for_native.future;
+    input r5 as privadex_amm_native_ethx_v7.aleo/swap_native_for_ethx.future;
     input r6 as token_registry.aleo/transfer_private.future;
     await r4;
     await r5;
@@ -203,8 +203,8 @@ function swap_ethx_for_btcx_via_aleo:
     lte r19 18446744073709551615u128 into r21;
     assert.eq r21 true;
     cast r19 into r22 as u64;
-    call privadex_amm_native_ethx_v5.aleo/swap_ethx_for_native r0 9u64 r1 r2 r3 r4 r22 into r23 r24 r25;
-    call privadex_amm_native_btcx_v5.aleo/swap_native_for_btcx r24 8u64 r24.microcredits r5 r6 r7 r8 into r26 r27 r28;
+    call privadex_amm_native_ethx_v7.aleo/swap_ethx_for_native r0 9u64 r1 r2 r3 r4 r22 into r23 r24 r25;
+    call privadex_amm_native_btcx_v7.aleo/swap_native_for_btcx r24 8u64 r24.microcredits r5 r6 r7 r8 into r26 r27 r28;
     call token_registry.aleo/transfer_private self.signer r27.amount r27 into r29 r30 r31;
     async swap_ethx_for_btcx_via_aleo 6u64 5u64 r1 r30.amount r25 r28 r31 into r32;
     output r23 as token_registry.aleo/Token.record;
@@ -216,8 +216,8 @@ finalize swap_ethx_for_btcx_via_aleo:
     input r1 as u64.public;
     input r2 as u128.public;
     input r3 as u128.public;
-    input r4 as privadex_amm_native_ethx_v5.aleo/swap_ethx_for_native.future;
-    input r5 as privadex_amm_native_btcx_v5.aleo/swap_native_for_btcx.future;
+    input r4 as privadex_amm_native_ethx_v7.aleo/swap_ethx_for_native.future;
+    input r5 as privadex_amm_native_btcx_v7.aleo/swap_native_for_btcx.future;
     input r6 as token_registry.aleo/transfer_private.future;
     await r4;
     await r5;
@@ -261,8 +261,8 @@ function swap_aleo_for_btcx_via_ethx:
     div r17 r19 into r20;
     gt r20 0u128 into r21;
     assert.eq r21 true;
-    call privadex_amm_native_ethx_v5.aleo/swap_native_for_ethx r0 9u64 r1 r2 r3 r4 r20 into r22 r23 r24;
-    call privadex_amm_btcx_ethx_v4.aleo/swap_ethx_for_btcx r23 10u64 r20 r5 r6 r7 r8 into r25 r26 r27;
+    call privadex_amm_native_ethx_v7.aleo/swap_native_for_ethx r0 9u64 r1 r2 r3 r4 r20 into r22 r23 r24;
+    call privadex_amm_btcx_ethx_v6.aleo/swap_ethx_for_btcx r23 10u64 r20 r5 r6 r7 r8 into r25 r26 r27;
     call token_registry.aleo/transfer_private self.signer r26.amount r26 into r28 r29 r30;
     async swap_aleo_for_btcx_via_ethx 0u64 5u64 r11 r29.amount r24 r27 r30 into r31;
     output r22 as credits.aleo/credits.record;
@@ -274,8 +274,8 @@ finalize swap_aleo_for_btcx_via_ethx:
     input r1 as u64.public;
     input r2 as u128.public;
     input r3 as u128.public;
-    input r4 as privadex_amm_native_ethx_v5.aleo/swap_native_for_ethx.future;
-    input r5 as privadex_amm_btcx_ethx_v4.aleo/swap_ethx_for_btcx.future;
+    input r4 as privadex_amm_native_ethx_v7.aleo/swap_native_for_ethx.future;
+    input r5 as privadex_amm_btcx_ethx_v6.aleo/swap_ethx_for_btcx.future;
     input r6 as token_registry.aleo/transfer_private.future;
     await r4;
     await r5;
@@ -318,7 +318,7 @@ function swap_btcx_for_aleo_via_ethx:
     div r16 r18 into r19;
     gt r19 0u128 into r20;
     assert.eq r20 true;
-    call privadex_amm_btcx_ethx_v4.aleo/swap_btcx_for_ethx r0 10u64 r1 r2 r3 r4 r19 into r21 r22 r23;
+    call privadex_amm_btcx_ethx_v6.aleo/swap_btcx_for_ethx r0 10u64 r1 r2 r3 r4 r19 into r21 r22 r23;
     is.eq r7 0u64 into r24;
     ternary r24 30u64 r7 into r25;
     sub 10000u64 r25 into r26;
@@ -332,7 +332,7 @@ function swap_btcx_for_aleo_via_ethx:
     assert.eq r33 true;
     lte r32 18446744073709551615u128 into r34;
     assert.eq r34 true;
-    call privadex_amm_native_ethx_v5.aleo/swap_ethx_for_native r22 9u64 r19 r5 r6 r7 r8 into r35 r36 r37;
+    call privadex_amm_native_ethx_v7.aleo/swap_ethx_for_native r22 9u64 r19 r5 r6 r7 r8 into r35 r36 r37;
     cast r36.microcredits into r38 as u128;
     call credits.aleo/transfer_private r36 self.signer r36.microcredits into r39 r40;
     async swap_btcx_for_aleo_via_ethx 5u64 0u64 r1 r38 r23 r37 into r41;
@@ -345,8 +345,8 @@ finalize swap_btcx_for_aleo_via_ethx:
     input r1 as u64.public;
     input r2 as u128.public;
     input r3 as u128.public;
-    input r4 as privadex_amm_btcx_ethx_v4.aleo/swap_btcx_for_ethx.future;
-    input r5 as privadex_amm_native_ethx_v5.aleo/swap_ethx_for_native.future;
+    input r4 as privadex_amm_btcx_ethx_v6.aleo/swap_btcx_for_ethx.future;
+    input r5 as privadex_amm_native_ethx_v7.aleo/swap_ethx_for_native.future;
     await r4;
     await r5;
     get.or_use initialized[true] false into r6;
@@ -388,8 +388,8 @@ function swap_aleo_for_ethx_via_btcx:
     div r17 r19 into r20;
     gt r20 0u128 into r21;
     assert.eq r21 true;
-    call privadex_amm_native_btcx_v5.aleo/swap_native_for_btcx r0 8u64 r1 r2 r3 r4 r20 into r22 r23 r24;
-    call privadex_amm_btcx_ethx_v4.aleo/swap_btcx_for_ethx r23 10u64 r20 r5 r6 r7 r8 into r25 r26 r27;
+    call privadex_amm_native_btcx_v7.aleo/swap_native_for_btcx r0 8u64 r1 r2 r3 r4 r20 into r22 r23 r24;
+    call privadex_amm_btcx_ethx_v6.aleo/swap_btcx_for_ethx r23 10u64 r20 r5 r6 r7 r8 into r25 r26 r27;
     call token_registry.aleo/transfer_private self.signer r26.amount r26 into r28 r29 r30;
     async swap_aleo_for_ethx_via_btcx 0u64 6u64 r11 r29.amount r24 r27 r30 into r31;
     output r22 as credits.aleo/credits.record;
@@ -401,8 +401,8 @@ finalize swap_aleo_for_ethx_via_btcx:
     input r1 as u64.public;
     input r2 as u128.public;
     input r3 as u128.public;
-    input r4 as privadex_amm_native_btcx_v5.aleo/swap_native_for_btcx.future;
-    input r5 as privadex_amm_btcx_ethx_v4.aleo/swap_btcx_for_ethx.future;
+    input r4 as privadex_amm_native_btcx_v7.aleo/swap_native_for_btcx.future;
+    input r5 as privadex_amm_btcx_ethx_v6.aleo/swap_btcx_for_ethx.future;
     input r6 as token_registry.aleo/transfer_private.future;
     await r4;
     await r5;
@@ -445,7 +445,7 @@ function swap_ethx_for_aleo_via_btcx:
     div r16 r18 into r19;
     gt r19 0u128 into r20;
     assert.eq r20 true;
-    call privadex_amm_btcx_ethx_v4.aleo/swap_ethx_for_btcx r0 10u64 r1 r2 r3 r4 r19 into r21 r22 r23;
+    call privadex_amm_btcx_ethx_v6.aleo/swap_ethx_for_btcx r0 10u64 r1 r2 r3 r4 r19 into r21 r22 r23;
     is.eq r7 0u64 into r24;
     ternary r24 30u64 r7 into r25;
     sub 10000u64 r25 into r26;
@@ -459,7 +459,7 @@ function swap_ethx_for_aleo_via_btcx:
     assert.eq r33 true;
     lte r32 18446744073709551615u128 into r34;
     assert.eq r34 true;
-    call privadex_amm_native_btcx_v5.aleo/swap_btcx_for_native r22 8u64 r19 r5 r6 r7 r8 into r35 r36 r37;
+    call privadex_amm_native_btcx_v7.aleo/swap_btcx_for_native r22 8u64 r19 r5 r6 r7 r8 into r35 r36 r37;
     cast r36.microcredits into r38 as u128;
     call credits.aleo/transfer_private r36 self.signer r36.microcredits into r39 r40;
     async swap_ethx_for_aleo_via_btcx 6u64 0u64 r1 r38 r23 r37 into r41;
@@ -472,8 +472,8 @@ finalize swap_ethx_for_aleo_via_btcx:
     input r1 as u64.public;
     input r2 as u128.public;
     input r3 as u128.public;
-    input r4 as privadex_amm_btcx_ethx_v4.aleo/swap_ethx_for_btcx.future;
-    input r5 as privadex_amm_native_btcx_v5.aleo/swap_btcx_for_native.future;
+    input r4 as privadex_amm_btcx_ethx_v6.aleo/swap_ethx_for_btcx.future;
+    input r5 as privadex_amm_native_btcx_v7.aleo/swap_btcx_for_native.future;
     await r4;
     await r5;
     get.or_use initialized[true] false into r6;
