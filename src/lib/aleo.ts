@@ -547,6 +547,16 @@ export function getRecordCredits(r: any): bigint {
   return parseLeoInt(raw);
 }
 
+function getRecordPlaintext(r: any): string {
+  return r?.recordPlaintext || r?.plaintext || "";
+}
+
+function isExcludedRecord(r: any, excludedPlaintexts?: Set<string>): boolean {
+  if (!excludedPlaintexts || excludedPlaintexts.size === 0) return false;
+  const pt = getRecordPlaintext(r);
+  return !!pt && excludedPlaintexts.has(pt);
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
@@ -711,8 +721,13 @@ export async function splitToExact(
   throw new Error("Split ALEO record not found after split. Please try again.");
 }
 
-function getSpendableCreditsRecords(records: any[]): any[] {
-  return records.filter((r: any) => !r.spent && !isRecordManuallySpent(r) && getRecordCredits(r) > 0n);
+function getSpendableCreditsRecords(records: any[], excludedPlaintexts?: Set<string>): any[] {
+  return records.filter((r: any) => (
+    !r.spent &&
+    !isRecordManuallySpent(r) &&
+    !isExcludedRecord(r, excludedPlaintexts) &&
+    getRecordCredits(r) > 0n
+  ));
 }
 
 function totalCreditsBalance(records: any[]): bigint {
@@ -738,14 +753,18 @@ function selectCreditsRecord(
 async function pollForCreditsRecordAtLeast(
   requestRecords: any,
   minimumAmount: bigint,
+  excludedPlaintexts?: Set<string>,
 ): Promise<string> {
   let lastPlaintext: string | null = null;
   await sleep(3_000);
   for (let attempt = 0; attempt < 20; attempt++) {
-    const fresh = getSpendableCreditsRecords(await fetchRecordsRobust(requestRecords, "credits.aleo"));
+    const fresh = getSpendableCreditsRecords(
+      await fetchRecordsRobust(requestRecords, "credits.aleo"),
+      excludedPlaintexts,
+    );
     const match = selectCreditsRecord(fresh, minimumAmount);
     if (match) {
-      const pt = match.recordPlaintext || match.plaintext;
+      const pt = getRecordPlaintext(match);
       if (pt && pt === lastPlaintext) {
         console.log(`[pollForCreditsRecordAtLeast] Stable record found on attempt ${attempt}`);
         return pt;
@@ -801,14 +820,18 @@ export async function prepareCreditsRecordForTx(
   requiredAmount: bigint,
   address?: string,
   onStatus?: (msg: string) => void,
+  excludedPlaintexts?: Set<string>,
 ): Promise<string> {
   const JOIN_FEE = 1_500_000;
   const feeBig = BigInt(JOIN_FEE);
 
-  let spendable = getSpendableCreditsRecords(await fetchRecordsRobust(requestRecords, "credits.aleo"));
+  let spendable = getSpendableCreditsRecords(
+    await fetchRecordsRobust(requestRecords, "credits.aleo"),
+    excludedPlaintexts,
+  );
   let sufficient = selectCreditsRecord(spendable, requiredAmount);
   if (sufficient) {
-    const pt = sufficient.recordPlaintext || sufficient.plaintext;
+    const pt = getRecordPlaintext(sufficient);
     if (pt) {
       console.log(`[prepareCreditsRecordForTx] Using existing ALEO record ${(Number(getRecordCredits(sufficient)) / 1e6).toFixed(2)} (need ${(Number(requiredAmount) / 1e6).toFixed(2)})`);
       return pt;
@@ -826,10 +849,13 @@ export async function prepareCreditsRecordForTx(
 
     onStatus?.("Combining ALEO records…");
     while (true) {
-      spendable = getSpendableCreditsRecords(await fetchRecordsRobust(requestRecords, "credits.aleo"));
+      spendable = getSpendableCreditsRecords(
+        await fetchRecordsRobust(requestRecords, "credits.aleo"),
+        excludedPlaintexts,
+      );
       sufficient = selectCreditsRecord(spendable, requiredAmount);
       if (sufficient) {
-        const pt = sufficient.recordPlaintext || sufficient.plaintext;
+        const pt = getRecordPlaintext(sufficient);
         if (pt) return pt;
       }
       if (spendable.length < 2) break;
@@ -840,8 +866,8 @@ export async function prepareCreditsRecordForTx(
       });
       const left = sorted[0];
       const right = sorted[1];
-      const leftPt = left.recordPlaintext || left.plaintext;
-      const rightPt = right.recordPlaintext || right.plaintext;
+      const leftPt = getRecordPlaintext(left);
+      const rightPt = getRecordPlaintext(right);
       if (!leftPt || !rightPt) break;
 
       const minimumJoinedAmount = getRecordCredits(left) + getRecordCredits(right);
@@ -858,10 +884,13 @@ export async function prepareCreditsRecordForTx(
       );
     }
 
-    spendable = getSpendableCreditsRecords(await fetchRecordsRobust(requestRecords, "credits.aleo"));
+    spendable = getSpendableCreditsRecords(
+      await fetchRecordsRobust(requestRecords, "credits.aleo"),
+      excludedPlaintexts,
+    );
     sufficient = selectCreditsRecord(spendable, requiredAmount);
     if (sufficient) {
-      const pt = sufficient.recordPlaintext || sufficient.plaintext;
+      const pt = getRecordPlaintext(sufficient);
       if (pt) return pt;
     }
   }
@@ -879,7 +908,7 @@ export async function prepareCreditsRecordForTx(
         JOIN_FEE,
         false,
       );
-      return await pollForCreditsRecordAtLeast(requestRecords, requiredAmount);
+      return await pollForCreditsRecordAtLeast(requestRecords, requiredAmount, excludedPlaintexts);
     }
   }
 
@@ -1120,11 +1149,13 @@ async function pollForExactCreditsRecord(
  */
 export async function fetchUsdcxTokenRecords(
   requestRecords: any,
+  excludedPlaintexts?: Set<string>,
 ): Promise<any[]> {
   const allRecs = await fetchRecordsRobust(requestRecords, PROGRAMS.USDCX);
   console.log(`[fetchUsdcxTokenRecords] Got ${allRecs.length} raw records from ${PROGRAMS.USDCX}`);
   return allRecs.filter((r: any) => {
     if (r.spent || isRecordManuallySpent(r)) return false;
+    if (isExcludedRecord(r, excludedPlaintexts)) return false;
     // Only Token records (not ComplianceRecord, Credentials, etc)
     // Shield Wallet may return recordName as "Token" or "test_usdcx_stablecoin.aleo/Token"
     const recordType = r.recordName || r.type || "";
@@ -1177,24 +1208,26 @@ async function pollForStableUsdcxTokenRecord(
     initialDelayMs?: number;
     intervalMs?: number;
     maxAttempts?: number;
+    excludedPlaintexts?: Set<string>;
   },
 ): Promise<string> {
   const exactAmount = options?.exactAmount;
   const initialDelayMs = options?.initialDelayMs ?? 5_000;
   const intervalMs = options?.intervalMs ?? 3_000;
   const maxAttempts = options?.maxAttempts ?? 20;
+  const excludedPlaintexts = options?.excludedPlaintexts;
 
   let lastPlaintext: string | null = null;
   if (initialDelayMs > 0) await sleep(initialDelayMs);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const fresh = await fetchUsdcxTokenRecords(requestRecords);
+    const fresh = await fetchUsdcxTokenRecords(requestRecords, excludedPlaintexts);
     const match = exactAmount != null
       ? fresh.find((r: any) => getRecordAmount(r) === exactAmount)
       : selectTokenRecord(fresh, requiredAmount);
 
     if (match) {
-      const pt = match.recordPlaintext || match.plaintext;
+      const pt = getRecordPlaintext(match);
       if (pt && pt === lastPlaintext) {
         console.log(`[pollForStableUsdcxTokenRecord] Stable Token found on attempt ${attempt}`);
         return pt;
@@ -1328,8 +1361,9 @@ export async function prepareUsdcxForTx(
   requestRecords: any,
   requiredAmount: bigint,
   address?: string,
+  excludedPlaintexts?: Set<string>,
 ): Promise<{ tokenRecord: string; merkleProofs: string }> {
-  let records = await fetchUsdcxTokenRecords(requestRecords);
+  let records = await fetchUsdcxTokenRecords(requestRecords, excludedPlaintexts);
   let privateTotal = totalUsdcxBalance(records);
 
   // Give Shield Wallet a short chance to finish background joins before we
@@ -1341,6 +1375,7 @@ export async function prepareUsdcxForTx(
         initialDelayMs: 0,
         intervalMs: 1_500,
         maxAttempts: 4,
+        excludedPlaintexts,
       });
       const amt = getRecordAmount(sufficient);
       console.log(`[prepareUsdcxForTx] Using stable Token record: ${(Number(amt) / 1e6).toFixed(2)} USDCx (need ${(Number(requiredAmount) / 1e6).toFixed(2)})`);
@@ -1348,7 +1383,7 @@ export async function prepareUsdcxForTx(
     }
     if (attempt < 2) {
       await sleep(1_500);
-      records = await fetchUsdcxTokenRecords(requestRecords);
+      records = await fetchUsdcxTokenRecords(requestRecords, excludedPlaintexts);
       privateTotal = totalUsdcxBalance(records);
     }
   }
@@ -1357,13 +1392,14 @@ export async function prepareUsdcxForTx(
   if (privateTotal >= requiredAmount && records.length > 1) {
     console.log(`[prepareUsdcxForTx] Joining fragmented USDCx records to reach ${(Number(requiredAmount) / 1e6).toFixed(2)}`);
     while (true) {
-      records = await fetchUsdcxTokenRecords(requestRecords);
+      records = await fetchUsdcxTokenRecords(requestRecords, excludedPlaintexts);
       const sufficient = selectTokenRecord(records, requiredAmount);
       if (sufficient) {
         const pt = await pollForStableUsdcxTokenRecord(requestRecords, requiredAmount, {
           initialDelayMs: 0,
           intervalMs: 1_500,
           maxAttempts: 4,
+          excludedPlaintexts,
         });
         return { tokenRecord: pt, merkleProofs: EMPTY_MERKLE_PROOFS };
       }
@@ -1375,8 +1411,8 @@ export async function prepareUsdcxForTx(
       });
       const left = sorted[0];
       const right = sorted[1];
-      const leftPt = left.recordPlaintext || left.plaintext;
-      const rightPt = right.recordPlaintext || right.plaintext;
+      const leftPt = getRecordPlaintext(left);
+      const rightPt = getRecordPlaintext(right);
       if (!leftPt || !rightPt) break;
 
       const minimumJoinedAmount = getRecordAmount(left) + getRecordAmount(right);

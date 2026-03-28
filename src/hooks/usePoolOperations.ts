@@ -185,6 +185,63 @@ export function usePoolOperations() {
     let usedRecB: string | null = null
 
     try {
+      let merkleProofs: string | undefined
+      const prepareRecordsForAmounts = async (
+        amountForA: bigint,
+        amountForB: bigint,
+        exclusions?: { recordA?: Set<string>; recordB?: Set<string> },
+      ) => {
+        let nextRecA: string | null = null
+        let nextRecB: string | null = null
+        let nextMerkleProofs: string | undefined
+
+        if (config.tokenAIsCredits && config.symbolB === 'USDCx') {
+          setStatusMsg('Preparing ALEO record...')
+          nextRecA = await prepareCreditsRecordForTx(
+            walletExecute, requestRecords, amountForA, address, (m) => setStatusMsg(m), exclusions?.recordA,
+          )
+
+          setStatusMsg('Preparing USDCx record...')
+          const usdcxResult = await prepareUsdcxForTx(
+            walletExecute, requestRecords, amountForB, address, exclusions?.recordB,
+          )
+          nextRecB = usdcxResult.tokenRecord
+          nextMerkleProofs = usdcxResult.merkleProofs
+
+        } else if (config.tokenAIsCredits) {
+          setStatusMsg('Preparing ALEO record...')
+          nextRecA = await prepareCreditsRecordForTx(
+            walletExecute, requestRecords, amountForA, address, (m) => setStatusMsg(m),
+          )
+
+          const regId = registryTokenIdForSymbol(config.symbolB)!
+          setStatusMsg(`Preparing ${config.symbolB} record...`)
+          nextRecB = await prepareRegistryTokenForTx(walletExecute, requestRecords, regId, amountForB, address)
+
+        } else if (config.symbolB === 'USDCx') {
+          const regId = registryTokenIdForSymbol(config.symbolA)!
+          setStatusMsg(`Preparing ${config.symbolA} record...`)
+          nextRecA = await prepareRegistryTokenForTx(walletExecute, requestRecords, regId, amountForA, address)
+
+          setStatusMsg('Preparing USDCx record...')
+          const usdcxResult = await prepareUsdcxForTx(
+            walletExecute, requestRecords, amountForB, address, exclusions?.recordB,
+          )
+          nextRecB = usdcxResult.tokenRecord
+          nextMerkleProofs = usdcxResult.merkleProofs
+
+        } else {
+          const regA = registryTokenIdForSymbol(config.symbolA)!
+          const regB = registryTokenIdForSymbol(config.symbolB)!
+          setStatusMsg(`Preparing ${config.symbolA} record...`)
+          nextRecA = await prepareRegistryTokenForTx(walletExecute, requestRecords, regA, amountForA, address)
+          setStatusMsg(`Preparing ${config.symbolB} record...`)
+          nextRecB = await prepareRegistryTokenForTx(walletExecute, requestRecords, regB, amountForB, address)
+        }
+
+        return { usedRecA: nextRecA, usedRecB: nextRecB, merkleProofs: nextMerkleProofs }
+      }
+
       // Initial fee check (preparatory txs may reduce this)
       const pubBal = await getPublicAleoBalance(address)
       if (pubBal < 1_500_000n) throw new Error('Insufficient public ALEO for fee.')
@@ -199,51 +256,7 @@ export function usePoolOperations() {
       // ── Phase 1: Prepare records (may involve multiple on-chain txs) ────
       // Credits-based pools now accept amount_a explicitly, so the wallet only
       // needs a spendable credits record with balance >= the requested amount.
-      let merkleProofs: string | undefined
-
-      if (config.tokenAIsCredits && config.symbolB === 'USDCx') {
-        // ALEO / USDCx
-        setStatusMsg('Preparing ALEO record...')
-        usedRecA = await prepareCreditsRecordForTx(
-          walletExecute, requestRecords, amtA, address, (m) => setStatusMsg(m),
-        )
-
-        setStatusMsg('Preparing USDCx record...')
-        const usdcxResult = await prepareUsdcxForTx(walletExecute, requestRecords, amtB, address)
-        usedRecB = usdcxResult.tokenRecord
-        merkleProofs = usdcxResult.merkleProofs
-
-      } else if (config.tokenAIsCredits) {
-        // ALEO / BTCx or ALEO / ETHx
-        setStatusMsg('Preparing ALEO record...')
-        usedRecA = await prepareCreditsRecordForTx(
-          walletExecute, requestRecords, amtA, address, (m) => setStatusMsg(m),
-        )
-
-        const regId = registryTokenIdForSymbol(config.symbolB)!
-        setStatusMsg(`Preparing ${config.symbolB} record...`)
-        usedRecB = await prepareRegistryTokenForTx(walletExecute, requestRecords, regId, amtB, address)
-
-      } else if (config.symbolB === 'USDCx') {
-        // BTCx / USDCx or ETHx / USDCx
-        const regId = registryTokenIdForSymbol(config.symbolA)!
-        setStatusMsg(`Preparing ${config.symbolA} record...`)
-        usedRecA = await prepareRegistryTokenForTx(walletExecute, requestRecords, regId, amtA, address)
-
-        setStatusMsg('Preparing USDCx record...')
-        const usdcxResult = await prepareUsdcxForTx(walletExecute, requestRecords, amtB, address)
-        usedRecB = usdcxResult.tokenRecord
-        merkleProofs = usdcxResult.merkleProofs
-
-      } else {
-        // BTCx / ETHx
-        const regA = registryTokenIdForSymbol(config.symbolA)!
-        const regB = registryTokenIdForSymbol(config.symbolB)!
-        setStatusMsg(`Preparing ${config.symbolA} record...`)
-        usedRecA = await prepareRegistryTokenForTx(walletExecute, requestRecords, regA, amtA, address)
-        setStatusMsg(`Preparing ${config.symbolB} record...`)
-        usedRecB = await prepareRegistryTokenForTx(walletExecute, requestRecords, regB, amtB, address)
-      }
+      ;({ usedRecA, usedRecB, merkleProofs } = await prepareRecordsForAmounts(amtA, amtB))
 
       // ── Phase 2: Re-fetch reserves & re-compute with BigInt precision ────
       // Reserves may have changed during the lengthy record preparation phase.
@@ -271,6 +284,12 @@ export function usePoolOperations() {
       const expectedShares = applySlippage(freshShares)
       console.log(`[addLiquidity] Intended amtA: ${amtA}, amtB: ${amtB}, fresh shares: ${freshShares}, with slippage: ${expectedShares}`)
 
+      // Re-select records for the final on-chain amounts. This avoids using a
+      // record chosen before reserve refresh if Shield Wallet has since merged
+      // or replaced it in the background.
+      setStatusMsg('Refreshing input records...')
+      ;({ usedRecA, usedRecB, merkleProofs } = await prepareRecordsForAmounts(amtA, amtB))
+
       // Re-check fee after preparatory transactions
       const feeBalance = await getPublicAleoBalance(address)
       if (feeBalance < 1_500_000n) {
@@ -281,18 +300,21 @@ export function usePoolOperations() {
       }
 
       // ── Phase 3: Build inputs & execute ─────────────────────────────────
-      let inputs: string[]
       const recordIndices = [0, 1]
-
-      if (config.tokenAIsCredits && config.symbolB === 'USDCx') {
-        inputs = buildAddLiquidityInputs(usedRecA!, usedRecB!, merkleProofs!, poolId, amtA, amtB, freshReserves, expectedShares)
-      } else if (config.tokenAIsCredits) {
-        inputs = buildCreditsTokenAddLiqInputs(usedRecA!, usedRecB!, poolId, amtA, amtB, freshReserves, expectedShares)
-      } else if (config.symbolB === 'USDCx') {
-        inputs = buildTokenPairAddLiquidityInputs(usedRecA!, usedRecB!, merkleProofs!, poolId, amtA, amtB, freshReserves, expectedShares)
-      } else {
-        inputs = buildPureTokenPairAddLiqInputs(usedRecA!, usedRecB!, poolId, amtA, amtB, freshReserves, expectedShares)
+      const buildInputs = () => {
+        if (config.tokenAIsCredits && config.symbolB === 'USDCx') {
+          return buildAddLiquidityInputs(usedRecA!, usedRecB!, merkleProofs!, poolId, amtA, amtB, freshReserves, expectedShares)
+        }
+        if (config.tokenAIsCredits) {
+          return buildCreditsTokenAddLiqInputs(usedRecA!, usedRecB!, poolId, amtA, amtB, freshReserves, expectedShares)
+        }
+        if (config.symbolB === 'USDCx') {
+          return buildTokenPairAddLiquidityInputs(usedRecA!, usedRecB!, merkleProofs!, poolId, amtA, amtB, freshReserves, expectedShares)
+        }
+        return buildPureTokenPairAddLiqInputs(usedRecA!, usedRecB!, poolId, amtA, amtB, freshReserves, expectedShares)
       }
+
+      let inputs = buildInputs()
 
       // ── Diagnostic logging ──────────────────────────────────────────────
       console.log('[addLiquidity] === DIAGNOSTIC DUMP ===')
@@ -316,7 +338,30 @@ export function usePoolOperations() {
       inputs.forEach((inp, i) => console.log(`[addLiquidity] Input[${i}] (${inp.length} chars):`, inp.substring(0, 150)))
 
       setStatusMsg('Executing on-chain...')
-      const id = await executeOnChain(walletExecute, config.program, config.addLiquidity, inputs, 1_500_000, false, recordIndices)
+      let id: string
+      try {
+        id = await executeOnChain(walletExecute, config.program, config.addLiquidity, inputs, 1_500_000, false, recordIndices)
+      } catch (execErr: any) {
+        const execMsg = execErr?.message ?? 'Add liquidity failed.'
+        const isStaleInput =
+          execMsg.includes('already exists in the ledger') ||
+          execMsg.includes('input ID') ||
+          execMsg.includes('spent')
+
+        if (!isStaleInput) throw execErr
+
+        console.warn('[addLiquidity] Stale input detected, retrying with refreshed records', execMsg)
+        setStatusMsg('Refreshing records after stale-input error...')
+        const exclusionA = usedRecA ? new Set([usedRecA]) : undefined
+        const exclusionB = usedRecB ? new Set([usedRecB]) : undefined
+        ;({ usedRecA, usedRecB, merkleProofs } = await prepareRecordsForAmounts(amtA, amtB, {
+          recordA: exclusionA,
+          recordB: exclusionB,
+        }))
+        inputs = buildInputs()
+        setStatusMsg('Retrying on-chain execution...')
+        id = await executeOnChain(walletExecute, config.program, config.addLiquidity, inputs, 1_500_000, false, recordIndices)
+      }
       if (usedRecA) markRecordSpent(usedRecA)
       if (usedRecB) markRecordSpent(usedRecB)
 
