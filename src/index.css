@@ -1,0 +1,371 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════
+   PRIVADEX DESIGN SYSTEM
+   "Privacy has a visual language"
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── DESIGN TOKENS ─── */
+@theme {
+  /* Background layers */
+  --color-void: #050506;
+  --color-obsidian: #0a0b0d;
+  --color-graphite: #0f1012;
+  --color-carbon: #141518;
+  --color-slate-dark: #1a1b1f;
+  --color-slate: #1f2024;
+  --color-slate-light: #25262b;
+  --color-smoke: #2c2d33;
+
+  /* Surface overlays */
+  --color-glass: rgba(255, 255, 255, 0.03);
+  --color-glass-md: rgba(255, 255, 255, 0.05);
+  --color-glass-lg: rgba(255, 255, 255, 0.08);
+
+  /* Primary: Cryptographic Emerald */
+  --color-emerald: #2dd4a0;
+  --color-emerald-dim: #1a8a68;
+  --color-emerald-muted: rgba(45, 212, 160, 0.15);
+  --color-emerald-ghost: rgba(45, 212, 160, 0.06);
+
+  /* Secondary: Cold Cyan */
+  --color-cyan: #67e8f9;
+  --color-cyan-dim: #3ba8b8;
+  --color-cyan-muted: rgba(103, 232, 249, 0.12);
+
+  /* Accent: Muted Gold */
+  --color-gold: #d4a853;
+  --color-gold-dim: #a68430;
+  --color-gold-muted: rgba(212, 168, 83, 0.12);
+
+  /* Semantic */
+  --color-positive: #34d399;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-danger-muted: rgba(239, 68, 68, 0.12);
+
+  /* Text hierarchy */
+  --color-text-primary: #e8e9ed;
+  --color-text-secondary: #9a9ba3;
+  --color-text-tertiary: #5e5f67;
+  --color-text-ghost: #3a3b42;
+
+  /* Borders */
+  --color-border: rgba(255, 255, 255, 0.06);
+  --color-border-md: rgba(255, 255, 255, 0.1);
+  --color-border-lg: rgba(255, 255, 255, 0.16);
+
+  /* Typography scale */
+  --font-display: "Instrument Serif", Georgia, serif;
+  --font-body: "DM Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+
+  /* Spacing rhythm (use as --spacing-app-*) */
+  --spacing-app-xs: 4px;
+  --spacing-app-sm: 8px;
+  --spacing-app-md: 16px;
+  --spacing-app-lg: 24px;
+  --spacing-app-xl: 32px;
+  --spacing-app-2xl: 48px;
+  --spacing-app-3xl: 64px;
+  --spacing-app-4xl: 96px;
+}
+
+/* ─── BASE RESET ─── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  background-color: var(--color-obsidian);
+  color: var(--color-text-primary);
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+/* ─── SCROLLBAR ─── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-smoke);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
+}
+
+/* ─── SELECTION ─── */
+::selection {
+  background: var(--color-emerald-muted);
+  color: var(--color-emerald);
+}
+
+/* ─── NOISE TEXTURE OVERLAY ─── */
+.noise-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.015;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+/* ─── CRYPTOGRAPHIC GRID ─── */
+.crypto-grid {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* ─── GLASS SURFACE ─── */
+.glass-surface {
+  background: var(--color-glass);
+  border: 1px solid var(--color-border);
+  backdrop-filter: blur(24px);
+}
+
+.glass-surface-md {
+  background: var(--color-glass-md);
+  border: 1px solid var(--color-border-md);
+  backdrop-filter: blur(32px);
+}
+
+/* ─── VEIL OVERLAY ─── */
+.veil {
+  position: relative;
+}
+.veil::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(10, 11, 13, 0.4) 50%,
+    rgba(10, 11, 13, 0.85) 100%
+  );
+  pointer-events: none;
+}
+
+/* ─── EMERALD GLOW ─── */
+.glow-emerald {
+  box-shadow:
+    0 0 20px rgba(45, 212, 160, 0.05),
+    0 0 60px rgba(45, 212, 160, 0.03);
+}
+
+.glow-emerald-active {
+  box-shadow:
+    0 0 20px rgba(45, 212, 160, 0.1),
+    0 0 60px rgba(45, 212, 160, 0.05),
+    inset 0 1px 0 rgba(45, 212, 160, 0.1);
+}
+
+/* ─── BORDER STYLES ─── */
+.border-veil {
+  border: 1px solid var(--color-border);
+}
+
+.border-veil-md {
+  border: 1px solid var(--color-border-md);
+}
+
+/* ─── PREMIUM SHADOWS ─── */
+.shadow-elevated {
+  box-shadow:
+    0 1px 2px rgba(0,0,0,0.3),
+    0 4px 8px rgba(0,0,0,0.2),
+    0 12px 24px rgba(0,0,0,0.15);
+}
+
+.shadow-deep {
+  box-shadow:
+    0 2px 4px rgba(0,0,0,0.4),
+    0 8px 16px rgba(0,0,0,0.3),
+    0 24px 48px rgba(0,0,0,0.25),
+    0 48px 96px rgba(0,0,0,0.15);
+}
+
+/* ─── TABULAR NUMBERS ─── */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── TEXT WRAPPING ─── */
+.text-balance {
+  text-wrap: balance;
+}
+
+.text-pretty {
+  text-wrap: pretty;
+}
+
+/* ─── BUTTON PRESS EFFECT ─── */
+.press-scale {
+  transition-property: transform;
+  transition-duration: 150ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.press-scale:active {
+  transform: scale(0.96);
+}
+
+/* ─── SHIMMER / SKELETON ─── */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-glass) 0%,
+    var(--color-glass-md) 50%,
+    var(--color-glass) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* ─── ENCRYPTED LINE MOTIF ─── */
+@keyframes cryptoScroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.crypto-line {
+  overflow: hidden;
+  white-space: nowrap;
+}
+.crypto-line-inner {
+  display: inline-block;
+  animation: cryptoScroll 30s linear infinite;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-ghost);
+  letter-spacing: 0.5em;
+}
+
+/* ─── PRIVACY SHIELD PULSE ─── */
+@keyframes shieldPulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.02); }
+}
+
+.shield-pulse {
+  animation: shieldPulse 3s ease-in-out infinite;
+}
+
+/* ─── STAGGER ANIMATION UTILITIES ─── */
+.stagger-1 { animation-delay: 0ms; }
+.stagger-2 { animation-delay: 80ms; }
+.stagger-3 { animation-delay: 160ms; }
+.stagger-4 { animation-delay: 240ms; }
+.stagger-5 { animation-delay: 320ms; }
+.stagger-6 { animation-delay: 400ms; }
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease both;
+}
+
+/* ─── GRADIENT MOTIFS ─── */
+.gradient-radial-emerald {
+  background: radial-gradient(
+    ellipse 600px 400px at 50% 0%,
+    rgba(45, 212, 160, 0.06) 0%,
+    transparent 70%
+  );
+}
+
+.gradient-radial-top {
+  background: radial-gradient(
+    ellipse 800px 300px at 50% 0%,
+    rgba(45, 212, 160, 0.04) 0%,
+    transparent 70%
+  );
+}
+
+.gradient-veil-bottom {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    var(--color-obsidian) 100%
+  );
+}
+
+/* ─── PRIVACY MASK ANIMATION ─── */
+@keyframes maskReveal {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.mask-reveal {
+  animation: maskReveal 0.8s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* ─── RESPONSIVE CONTAINERS ─── */
+.container-app {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding-left: 24px;
+  padding-right: 24px;
+}
+
+@media (max-width: 768px) {
+  .container-app {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+/* ─── HIDE SCROLLBAR UTILITY ─── */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

@@ -1,0 +1,28 @@
+{
+  "program": "privadex_darkpool_v4.aleo",
+  "version": "0.1.0",
+  "description": "PrivaDEX dark pool v3 — fully private USDCx Token records + native ALEO credits",
+  "license": "MIT",
+  "leo": "3.5.0",
+  "dependencies": [
+    {
+      "name": "privadex_amm_v8.aleo",
+      "location": "local",
+      "path": "../privadex_amm_v8",
+      "edition": null
+    },
+    {
+      "name": "credits.aleo",
+      "location": "network",
+      "path": null,
+      "edition": null
+    },
+    {
+      "name": "test_usdcx_stablecoin.aleo",
+      "location": "network",
+      "path": null,
+      "edition": null
+    }
+  ],
+  "dev_dependencies": null
+}

@@ -1,0 +1,13 @@
+{
+  "program": "privadex_token_v2.aleo",
+  "version": "0.1.0",
+  "description": "PrivaDEX private token wrapper with backed ALEO escrow and bridge roles",
+  "license": "MIT",
+  "dependencies": [
+    {
+      "name": "credits.aleo",
+      "location": "network",
+      "network": "testnet"
+    }
+  ]
+}

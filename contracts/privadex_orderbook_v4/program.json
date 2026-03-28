@@ -1,0 +1,18 @@
+{
+  "program": "privadex_orderbook_v4.aleo",
+  "version": "0.1.0",
+  "description": "PrivaDEX order book v3 — fully private USDCx Token records + native ALEO credits",
+  "license": "MIT",
+  "dependencies": [
+    {
+      "name": "credits.aleo",
+      "location": "network",
+      "network": "testnet"
+    },
+    {
+      "name": "test_usdcx_stablecoin.aleo",
+      "location": "network",
+      "network": "testnet"
+    }
+  ]
+}

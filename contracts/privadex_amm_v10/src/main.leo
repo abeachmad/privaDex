@@ -1,0 +1,376 @@
+// PrivaDEX Shielded AMM v7 — ALEO / USDCx
+// Constant-product AMM (x*y=k) with LP positions
+//
+// Hardening changes:
+//   - Credits inputs spend explicit amounts and return change.
+//   - Swaps compute and pay exact output from a verified pool snapshot.
+//   - Finalize rejects stale quotes by re-checking reserves and fee on-chain.
+//   - LP share minting uses both sides of liquidity.
+//   - Pool tracks cumulative swap input volume and accrued fees.
+
+import credits.aleo;
+import test_usdcx_stablecoin.aleo;
+
+program privadex_amm_v10.aleo {
+
+    @noupgrade
+    async constructor() {}
+
+    const DEFAULT_FEE: u64 = 30u64;
+    const BPS_DENOM: u64 = 10000u64;
+
+    record LPPosition {
+        owner: address,
+        pool_id: u64,
+        shares: u128,
+    }
+
+    mapping reserve_a: u64 => u128;
+    mapping reserve_b: u64 => u128;
+    mapping total_shares: u64 => u128;
+    mapping fee_bps: u64 => u64;
+    mapping cumulative_volume_a: u64 => u128;
+    mapping cumulative_volume_b: u64 => u128;
+    mapping cumulative_fee_a: u64 => u128;
+    mapping cumulative_fee_b: u64 => u128;
+    mapping last_swap_block: u64 => u32;
+
+    // ASSERT LIVE SNAPSHOT
+    async transition assert_pool_snapshot(
+        pool_id: u64,
+        reserve_a_snapshot: u128,
+        reserve_b_snapshot: u128,
+        fee_bps_snapshot: u64,
+    ) -> Future {
+        let f: Future = finalize_assert_pool_snapshot(
+            pool_id,
+            reserve_a_snapshot,
+            reserve_b_snapshot,
+            fee_bps_snapshot,
+        );
+        return f;
+    }
+
+    async function finalize_assert_pool_snapshot(
+        pool_id: u64,
+        reserve_a_snapshot: u128,
+        reserve_b_snapshot: u128,
+        fee_bps_snapshot: u64,
+    ) {
+        let live_reserve_a: u128 = Mapping::get_or_use(reserve_a, pool_id, 0u128);
+        let live_reserve_b: u128 = Mapping::get_or_use(reserve_b, pool_id, 0u128);
+        let live_fee: u64 = Mapping::get_or_use(fee_bps, pool_id, DEFAULT_FEE);
+
+        assert(live_reserve_a == reserve_a_snapshot);
+        assert(live_reserve_b == reserve_b_snapshot);
+        assert(live_fee == fee_bps_snapshot);
+    }
+
+    // ADD LIQUIDITY
+    async transition add_liquidity(
+        credits_in: credits.aleo/credits,
+        token_in: test_usdcx_stablecoin.aleo/Token,
+        merkle_proofs: [test_usdcx_stablecoin.aleo/MerkleProof; 2],
+        pool_id: u64,
+        amount_a: u64,
+        amount_b: u128,
+        reserve_a_snapshot: u128,
+        reserve_b_snapshot: u128,
+        total_shares_snapshot: u128,
+        min_shares: u128,
+    ) -> (LPPosition, credits.aleo/credits, test_usdcx_stablecoin.aleo/ComplianceRecord, test_usdcx_stablecoin.aleo/Token, Future) {
+        assert(amount_a > 0u64);
+        assert(amount_b > 0u128);
+        assert(credits_in.microcredits >= amount_a);
+
+        let deposit_a: u128 = amount_a as u128;
+        let is_initial: bool = total_shares_snapshot == 0u128;
+        if is_initial {
+            assert(reserve_a_snapshot == 0u128);
+            assert(reserve_b_snapshot == 0u128);
+        } else {
+            assert(reserve_a_snapshot > 0u128);
+            assert(reserve_b_snapshot > 0u128);
+        }
+
+        let shares_from_a: u128 = is_initial
+            ? (deposit_a * amount_b)
+            : (deposit_a * total_shares_snapshot) / (reserve_a_snapshot > 0u128 ? reserve_a_snapshot : 1u128);
+        let shares_from_b: u128 = is_initial
+            ? (deposit_a * amount_b)
+            : (amount_b * total_shares_snapshot) / (reserve_b_snapshot > 0u128 ? reserve_b_snapshot : 1u128);
+        let actual_shares: u128 = shares_from_a <= shares_from_b ? shares_from_a : shares_from_b;
+        assert(actual_shares > 0u128);
+        assert(actual_shares >= min_shares);
+
+        let (change_a, f_ea): (credits.aleo/credits, Future) =
+            credits.aleo/transfer_private_to_public(
+                credits_in, self.address, amount_a
+            );
+        let (compliance_rec, change_token, f_eb): (test_usdcx_stablecoin.aleo/ComplianceRecord, test_usdcx_stablecoin.aleo/Token, Future) =
+            test_usdcx_stablecoin.aleo/transfer_private_to_public(
+                self.address, amount_b, token_in, merkle_proofs
+            );
+
+        let lp: LPPosition = LPPosition {
+            owner: self.signer,
+            pool_id: pool_id,
+            shares: actual_shares,
+        };
+
+        let f: Future = finalize_add_liq(
+            pool_id,
+            deposit_a,
+            amount_b,
+            reserve_a_snapshot,
+            reserve_b_snapshot,
+            total_shares_snapshot,
+            actual_shares,
+            f_ea,
+            f_eb,
+        );
+        return (lp, change_a, compliance_rec, change_token, f);
+    }
+
+    async function finalize_add_liq(
+        pool_id: u64,
+        amount_a: u128,
+        amount_b: u128,
+        reserve_a_snapshot: u128,
+        reserve_b_snapshot: u128,
+        total_shares_snapshot: u128,
+        minted_shares: u128,
+        f_ea: Future,
+        f_eb: Future,
+    ) {
+        f_ea.await();
+        f_eb.await();
+
+        let live_reserve_a: u128 = Mapping::get_or_use(reserve_a, pool_id, 0u128);
+        let live_reserve_b: u128 = Mapping::get_or_use(reserve_b, pool_id, 0u128);
+        let live_total_shares: u128 = Mapping::get_or_use(total_shares, pool_id, 0u128);
+
+        assert(live_reserve_a == reserve_a_snapshot);
+        assert(live_reserve_b == reserve_b_snapshot);
+        assert(live_total_shares == total_shares_snapshot);
+        assert(minted_shares > 0u128);
+
+        Mapping::set(reserve_a, pool_id, reserve_a_snapshot + amount_a);
+        Mapping::set(reserve_b, pool_id, reserve_b_snapshot + amount_b);
+        Mapping::set(total_shares, pool_id, total_shares_snapshot + minted_shares);
+    }
+
+    // REMOVE LIQUIDITY
+    async transition remove_liquidity(
+        lp_in: LPPosition,
+        reserve_a_snapshot: u128,
+        reserve_b_snapshot: u128,
+        total_shares_snapshot: u128,
+        min_amount_a: u64,
+        min_amount_b: u128,
+    ) -> (credits.aleo/credits, test_usdcx_stablecoin.aleo/ComplianceRecord, test_usdcx_stablecoin.aleo/Token, Future) {
+        assert(lp_in.shares > 0u128);
+        assert(total_shares_snapshot > 0u128);
+        assert(lp_in.shares <= total_shares_snapshot);
+
+        let amount_a: u128 = (lp_in.shares * reserve_a_snapshot) / total_shares_snapshot;
+        let amount_b: u128 = (lp_in.shares * reserve_b_snapshot) / total_shares_snapshot;
+
+        assert(amount_a >= min_amount_a as u128);
+        assert(amount_b >= min_amount_b);
+
+        let (credits_out, f_ta): (credits.aleo/credits, Future) =
+            credits.aleo/transfer_public_to_private(self.caller, amount_a as u64);
+        let (compliance_rec, token_out, f_tb): (test_usdcx_stablecoin.aleo/ComplianceRecord, test_usdcx_stablecoin.aleo/Token, Future) =
+            test_usdcx_stablecoin.aleo/transfer_public_to_private(self.caller, amount_b);
+
+        let f: Future = finalize_remove_liq(
+            lp_in.pool_id,
+            lp_in.shares,
+            reserve_a_snapshot,
+            reserve_b_snapshot,
+            total_shares_snapshot,
+            amount_a,
+            amount_b,
+            f_ta,
+            f_tb,
+        );
+        return (credits_out, compliance_rec, token_out, f);
+    }
+
+    async function finalize_remove_liq(
+        pool_id: u64,
+        shares: u128,
+        reserve_a_snapshot: u128,
+        reserve_b_snapshot: u128,
+        total_shares_snapshot: u128,
+        amount_a: u128,
+        amount_b: u128,
+        f_ta: Future,
+        f_tb: Future,
+    ) {
+        f_ta.await();
+        f_tb.await();
+
+        let live_reserve_a: u128 = Mapping::get(reserve_a, pool_id);
+        let live_reserve_b: u128 = Mapping::get(reserve_b, pool_id);
+        let live_total_shares: u128 = Mapping::get(total_shares, pool_id);
+
+        assert(live_reserve_a == reserve_a_snapshot);
+        assert(live_reserve_b == reserve_b_snapshot);
+        assert(live_total_shares == total_shares_snapshot);
+
+        Mapping::set(reserve_a, pool_id, reserve_a_snapshot - amount_a);
+        Mapping::set(reserve_b, pool_id, reserve_b_snapshot - amount_b);
+        Mapping::set(total_shares, pool_id, total_shares_snapshot - shares);
+    }
+
+    // SWAP ALEO -> USDCx
+    async transition swap_aleo_for_usdcx(
+        credits_in: credits.aleo/credits,
+        pool_id: u64,
+        amount_in: u64,
+        reserve_a_snapshot: u128,
+        reserve_b_snapshot: u128,
+        fee_bps_snapshot: u64,
+        min_out: u128,
+    ) -> (credits.aleo/credits, test_usdcx_stablecoin.aleo/ComplianceRecord, test_usdcx_stablecoin.aleo/Token, Future) {
+        assert(amount_in > 0u64);
+        assert(credits_in.microcredits >= amount_in);
+        assert(reserve_a_snapshot > 0u128);
+        assert(reserve_b_snapshot > 0u128);
+
+        let amount_in_u128: u128 = amount_in as u128;
+        let effective_fee: u64 = fee_bps_snapshot == 0u64 ? DEFAULT_FEE : fee_bps_snapshot;
+        let adjusted_in: u128 = amount_in_u128 * (BPS_DENOM - effective_fee) as u128;
+        let amount_out: u128 = (reserve_b_snapshot * adjusted_in) / (reserve_a_snapshot * BPS_DENOM as u128 + adjusted_in);
+
+        assert(amount_out >= min_out);
+
+        let (change_a, f_escrow): (credits.aleo/credits, Future) =
+            credits.aleo/transfer_private_to_public(credits_in, self.address, amount_in);
+        let (compliance_rec, token_out, f_send): (test_usdcx_stablecoin.aleo/ComplianceRecord, test_usdcx_stablecoin.aleo/Token, Future) =
+            test_usdcx_stablecoin.aleo/transfer_public_to_private(self.caller, amount_out);
+
+        let fee_amount: u128 = (amount_in_u128 * effective_fee as u128) / BPS_DENOM as u128;
+        let f: Future = finalize_swap_aleo_ux(
+            pool_id,
+            amount_in_u128,
+            amount_out,
+            reserve_a_snapshot,
+            reserve_b_snapshot,
+            effective_fee,
+            fee_amount,
+            f_escrow,
+            f_send,
+        );
+        return (change_a, compliance_rec, token_out, f);
+    }
+
+    async function finalize_swap_aleo_ux(
+        pool_id: u64,
+        amount_in: u128,
+        amount_out: u128,
+        reserve_a_snapshot: u128,
+        reserve_b_snapshot: u128,
+        fee_bps_snapshot: u64,
+        fee_amount: u128,
+        f_escrow: Future,
+        f_send: Future,
+    ) {
+        f_escrow.await();
+        f_send.await();
+
+        let live_reserve_a: u128 = Mapping::get(reserve_a, pool_id);
+        let live_reserve_b: u128 = Mapping::get(reserve_b, pool_id);
+        let live_fee: u64 = Mapping::get_or_use(fee_bps, pool_id, DEFAULT_FEE);
+
+        assert(live_reserve_a == reserve_a_snapshot);
+        assert(live_reserve_b == reserve_b_snapshot);
+        assert(live_fee == fee_bps_snapshot);
+
+        Mapping::set(reserve_a, pool_id, reserve_a_snapshot + amount_in);
+        Mapping::set(reserve_b, pool_id, reserve_b_snapshot - amount_out);
+
+        let cumulative_a: u128 = Mapping::get_or_use(cumulative_volume_a, pool_id, 0u128);
+        let fee_total_a: u128 = Mapping::get_or_use(cumulative_fee_a, pool_id, 0u128);
+        Mapping::set(cumulative_volume_a, pool_id, cumulative_a + amount_in);
+        Mapping::set(cumulative_fee_a, pool_id, fee_total_a + fee_amount);
+        Mapping::set(last_swap_block, pool_id, block.height);
+    }
+
+    // SWAP USDCx -> ALEO
+    async transition swap_usdcx_for_aleo(
+        token_in: test_usdcx_stablecoin.aleo/Token,
+        merkle_proofs: [test_usdcx_stablecoin.aleo/MerkleProof; 2],
+        pool_id: u64,
+        amount_in: u128,
+        reserve_a_snapshot: u128,
+        reserve_b_snapshot: u128,
+        fee_bps_snapshot: u64,
+        min_out: u64,
+    ) -> (credits.aleo/credits, test_usdcx_stablecoin.aleo/ComplianceRecord, test_usdcx_stablecoin.aleo/Token, Future) {
+        assert(amount_in > 0u128);
+        assert(reserve_a_snapshot > 0u128);
+        assert(reserve_b_snapshot > 0u128);
+
+        let effective_fee: u64 = fee_bps_snapshot == 0u64 ? DEFAULT_FEE : fee_bps_snapshot;
+        let adjusted_in: u128 = amount_in * (BPS_DENOM - effective_fee) as u128;
+        let amount_out: u128 = (reserve_a_snapshot * adjusted_in) / (reserve_b_snapshot * BPS_DENOM as u128 + adjusted_in);
+
+        assert(amount_out >= min_out as u128);
+
+        let (compliance_rec, change_token, f_escrow): (test_usdcx_stablecoin.aleo/ComplianceRecord, test_usdcx_stablecoin.aleo/Token, Future) =
+            test_usdcx_stablecoin.aleo/transfer_private_to_public(
+                self.address, amount_in, token_in, merkle_proofs
+            );
+        let (credits_out, f_send): (credits.aleo/credits, Future) =
+            credits.aleo/transfer_public_to_private(self.caller, amount_out as u64);
+
+        let fee_amount: u128 = (amount_in * effective_fee as u128) / BPS_DENOM as u128;
+        let f: Future = finalize_swap_ux_aleo(
+            pool_id,
+            amount_in,
+            amount_out,
+            reserve_a_snapshot,
+            reserve_b_snapshot,
+            effective_fee,
+            fee_amount,
+            f_escrow,
+            f_send,
+        );
+        return (credits_out, compliance_rec, change_token, f);
+    }
+
+    async function finalize_swap_ux_aleo(
+        pool_id: u64,
+        amount_in: u128,
+        amount_out: u128,
+        reserve_a_snapshot: u128,
+        reserve_b_snapshot: u128,
+        fee_bps_snapshot: u64,
+        fee_amount: u128,
+        f_escrow: Future,
+        f_send: Future,
+    ) {
+        f_escrow.await();
+        f_send.await();
+
+        let live_reserve_a: u128 = Mapping::get(reserve_a, pool_id);
+        let live_reserve_b: u128 = Mapping::get(reserve_b, pool_id);
+        let live_fee: u64 = Mapping::get_or_use(fee_bps, pool_id, DEFAULT_FEE);
+
+        assert(live_reserve_a == reserve_a_snapshot);
+        assert(live_reserve_b == reserve_b_snapshot);
+        assert(live_fee == fee_bps_snapshot);
+
+        Mapping::set(reserve_a, pool_id, reserve_a_snapshot - amount_out);
+        Mapping::set(reserve_b, pool_id, reserve_b_snapshot + amount_in);
+
+        let cumulative_b: u128 = Mapping::get_or_use(cumulative_volume_b, pool_id, 0u128);
+        let fee_total_b: u128 = Mapping::get_or_use(cumulative_fee_b, pool_id, 0u128);
+        Mapping::set(cumulative_volume_b, pool_id, cumulative_b + amount_in);
+        Mapping::set(cumulative_fee_b, pool_id, fee_total_b + fee_amount);
+        Mapping::set(last_swap_block, pool_id, block.height);
+    }
+}

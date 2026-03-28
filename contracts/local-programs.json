@@ -1,0 +1,94 @@
+{
+  "contractRoot": "contracts",
+  "rule": "Use only paths under contracts/ when inspecting or editing contract sources for this frontend workspace.",
+  "activeFrontendPrograms": {
+    "VITE_PROGRAM_TOKEN": {
+      "program": "privadex_token.aleo",
+      "source": "contracts/privadex_token/src/main.leo",
+      "metadata": "contracts/privadex_token/program.json"
+    },
+    "VITE_PROGRAM_AMM": {
+      "program": "privadex_amm_v7.aleo",
+      "source": "contracts/privadex_amm_v7/src/main.leo",
+      "metadata": "contracts/privadex_amm_v7/program.json",
+      "note": "Local source restored and hardened to use verified reserve snapshots for exact-output swaps and fair LP share minting."
+    },
+    "VITE_PROGRAM_AMM_BTCX": {
+      "program": "privadex_amm_btcx_v3.aleo",
+      "source": "contracts/privadex_amm_btcx_v3/src/main.leo",
+      "build": "contracts/privadex_amm_btcx_v3/build/main.aleo",
+      "metadata": "contracts/privadex_amm_btcx_v3/program.json"
+    },
+    "VITE_PROGRAM_AMM_ETHX": {
+      "program": "privadex_amm_ethx_v3.aleo",
+      "source": "contracts/privadex_amm_ethx_v3/src/main.leo",
+      "build": "contracts/privadex_amm_ethx_v3/build/main.aleo",
+      "metadata": "contracts/privadex_amm_ethx_v3/program.json"
+    },
+    "VITE_PROGRAM_AMM_NATIVE_BTCX": {
+      "program": "privadex_amm_native_btcx_v3.aleo",
+      "source": "contracts/privadex_amm_native_btcx_v3/src/main.leo",
+      "build": "contracts/privadex_amm_native_btcx_v3/build/main.aleo",
+      "metadata": "contracts/privadex_amm_native_btcx_v3/program.json"
+    },
+    "VITE_PROGRAM_AMM_NATIVE_ETHX": {
+      "program": "privadex_amm_native_ethx_v3.aleo",
+      "source": "contracts/privadex_amm_native_ethx_v3/src/main.leo",
+      "build": "contracts/privadex_amm_native_ethx_v3/build/main.aleo",
+      "metadata": "contracts/privadex_amm_native_ethx_v3/program.json"
+    },
+    "VITE_PROGRAM_AMM_BTCX_ETHX": {
+      "program": "privadex_amm_btcx_ethx_v3.aleo",
+      "source": "contracts/privadex_amm_btcx_ethx_v3/src/main.leo",
+      "build": "contracts/privadex_amm_btcx_ethx_v3/build/main.aleo",
+      "metadata": "contracts/privadex_amm_btcx_ethx_v3/program.json"
+    },
+    "VITE_PROGRAM_USDCX": {
+      "program": "test_usdcx_stablecoin.aleo",
+      "artifact": "contracts/test_usdcx_stablecoin.aleo"
+    },
+    "VITE_PROGRAM_TOKEN_REGISTRY": {
+      "program": "token_registry.aleo",
+      "artifact": "contracts/token_registry.aleo"
+    },
+    "VITE_PROGRAM_DARKPOOL": {
+      "program": "privadex_darkpool_v3.aleo",
+      "source": "contracts/privadex_darkpool_v3/src/main.leo",
+      "build": "contracts/privadex_darkpool_v3/build/main.aleo",
+      "metadata": "contracts/privadex_darkpool_v3/program.json"
+    },
+    "VITE_PROGRAM_ORDERBOOK": {
+      "program": "privadex_orderbook_v3.aleo",
+      "source": "contracts/privadex_orderbook_v3/src/main.leo",
+      "build": "contracts/privadex_orderbook_v3/build/main.aleo",
+      "metadata": "contracts/privadex_orderbook_v3/program.json"
+    },
+    "VITE_PROGRAM_ROUTER": {
+      "program": "privadex_router.aleo",
+      "source": "contracts/privadex_router/src/main.leo",
+      "metadata": "contracts/privadex_router/program.json"
+    }
+  },
+  "localUpgradeCandidates": {
+    "VITE_PROGRAM_AMM_NATIVE_BTCX": {
+      "program": "privadex_amm_native_btcx_v4.aleo",
+      "source": "contracts/privadex_amm_native_btcx_v4/src/main.leo",
+      "build": "contracts/privadex_amm_native_btcx_v4/build/main.aleo",
+      "metadata": "contracts/privadex_amm_native_btcx_v4/program.json",
+      "note": "Partial ALEO LP deposit support. Frontend auto-switches to the no-exact-record flow when this program ID is active."
+    },
+    "VITE_PROGRAM_AMM_NATIVE_ETHX": {
+      "program": "privadex_amm_native_ethx_v4.aleo",
+      "source": "contracts/privadex_amm_native_ethx_v4/src/main.leo",
+      "build": "contracts/privadex_amm_native_ethx_v4/build/main.aleo",
+      "metadata": "contracts/privadex_amm_native_ethx_v4/program.json",
+      "note": "Partial ALEO LP deposit support. Frontend auto-switches to the no-exact-record flow when this program ID is active."
+    }
+  },
+  "sharedArtifacts": {
+    "credits.aleo": "contracts/credits.aleo",
+    "merkle_tree.aleo": "contracts/merkle_tree.aleo",
+    "test_usdcx_multisig_core.aleo": "contracts/test_usdcx_multisig_core.aleo",
+    "test_usdcx_freezelist.aleo": "contracts/test_usdcx_freezelist.aleo"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "program": "privadex_amm_native_ethx_v7.aleo",
+  "version": "0.1.0",
+  "description": "",
+  "license": "",
+  "leo": "3.5.0",
+  "dependencies": null,
+  "dev_dependencies": null
+}

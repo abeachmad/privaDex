@@ -1,0 +1,40 @@
+{
+  "program": "privadex_router_v2.aleo",
+  "version": "0.1.0",
+  "description": "PrivaDEX router with atomic multi-hop execution across native BTCx/ETHx venues",
+  "license": "MIT",
+  "leo": "3.5.0",
+  "dependencies": [
+    {
+      "name": "privadex_amm_native_btcx_v5.aleo",
+      "location": "local",
+      "path": "../privadex_amm_native_btcx_v5",
+      "edition": null
+    },
+    {
+      "name": "privadex_amm_native_ethx_v5.aleo",
+      "location": "local",
+      "path": "../privadex_amm_native_ethx_v5",
+      "edition": null
+    },
+    {
+      "name": "privadex_amm_btcx_ethx_v4.aleo",
+      "location": "local",
+      "path": "../privadex_amm_btcx_ethx_v4",
+      "edition": null
+    },
+    {
+      "name": "credits.aleo",
+      "location": "network",
+      "path": null,
+      "edition": null
+    },
+    {
+      "name": "token_registry.aleo",
+      "location": "network",
+      "path": null,
+      "edition": null
+    }
+  ],
+  "dev_dependencies": null
+}

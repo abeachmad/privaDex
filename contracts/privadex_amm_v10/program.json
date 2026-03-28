@@ -1,0 +1,18 @@
+{
+  "program": "privadex_amm_v10.aleo",
+  "version": "0.1.0",
+  "description": "PrivaDEX shielded AMM v7 — exact-output snapshot AMM for ALEO / USDCx",
+  "license": "MIT",
+  "dependencies": [
+    {
+      "name": "credits.aleo",
+      "location": "network",
+      "network": "testnet"
+    },
+    {
+      "name": "test_usdcx_stablecoin.aleo",
+      "location": "network",
+      "network": "testnet"
+    }
+  ]
+}
