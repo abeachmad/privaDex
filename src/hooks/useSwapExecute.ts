@@ -35,9 +35,71 @@ import type { TxStatus } from '../lib/aleo'
 
 export type ProofStatus = 'idle' | 'preparing' | 'proving' | 'verified'
 
+const TESTNET_HEIGHT_URL = 'https://api.explorer.provable.com/v1/testnet/latest/height'
+const DARKPOOL_EPOCH_DURATION = 120
+const DARKPOOL_MIN_BLOCKS_LEFT = 10
+
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function fetchLatestTestnetHeight(): Promise<number> {
+  const res = await fetch(TESTNET_HEIGHT_URL, { signal: AbortSignal.timeout(5000) })
+  if (!res.ok) throw new Error('Failed to fetch latest Aleo block height.')
+
+  const height = parseInt(await res.text(), 10)
+  if (!Number.isFinite(height)) {
+    throw new Error('Latest Aleo block height was invalid.')
+  }
+
+  return height
+}
+
+async function waitForPreparationTransactions(
+  prepTxIds: string[],
+  walletTransactionStatus?: (txId: string) => Promise<any>,
+  onStatus?: (msg: string | null) => void,
+) {
+  const uniqueTxIds = [...new Set(prepTxIds.filter(Boolean))]
+  for (const prepTxId of uniqueTxIds) {
+    onStatus?.('Waiting for record preparation to finalize...')
+    const status = await pollTransactionStatus(prepTxId, undefined, 3_000, 180_000, walletTransactionStatus)
+    if (status === 'rejected') {
+      throw new Error('A record preparation transaction was rejected on-chain.')
+    }
+  }
+}
+
+async function waitForSafeDarkPoolEpochWindow(
+  onStatus?: (msg: string | null) => void,
+  minBlocksLeft = DARKPOOL_MIN_BLOCKS_LEFT,
+  maxWaitMs = 45_000,
+): Promise<{ height: number; epochId: number; blocksLeft: number }> {
+  const start = Date.now()
+
+  while (true) {
+    const height = await fetchLatestTestnetHeight()
+    const blocksLeft = DARKPOOL_EPOCH_DURATION - (height % DARKPOOL_EPOCH_DURATION)
+    const epochId = currentEpochId(height, DARKPOOL_EPOCH_DURATION)
+
+    if (blocksLeft > minBlocksLeft) {
+      return { height, epochId, blocksLeft }
+    }
+
+    const approxSeconds = Math.max(5, Math.ceil(blocksLeft * 3.5))
+    onStatus?.(`Waiting for the next dark pool epoch window (~${approxSeconds}s)...`)
+    if (Date.now() - start >= maxWaitMs) {
+      throw new Error(`Dark Pool epoch is rotating right now. Please retry in about ${approxSeconds} seconds.`)
+    }
+
+    await sleep(2_500)
+  }
+}
+
 async function buildSwapRejectionMessage(
   txId: string,
   pairLabel: string,
+  venue: Venue,
   walletTransactionStatus?: (txId: string) => Promise<any>,
 ): Promise<string> {
   const resolvedTxId = await resolveOnChainTransactionId(txId, walletTransactionStatus)
@@ -57,6 +119,34 @@ async function buildSwapRejectionMessage(
     lowerBody.includes('test_usdcx_stablecoin')
   ) {
     return `Swap ${pairLabel} rejected during USDCx escrow. Compliance or freeze-list proof may have failed.${txSuffix}`
+  }
+
+  if (venue === 'darkpool') {
+    if (
+      lowerBody.includes('epoch_id') ||
+      lowerBody.includes('current_epoch') ||
+      lowerBody.includes('epoch_closed') ||
+      lowerBody.includes('submit_buy_aleo') ||
+      lowerBody.includes('submit_sell_aleo') ||
+      lowerBody.includes('finalize_submit') ||
+      lowerBody.includes('closed')
+    ) {
+      return `Dark Pool intent ${pairLabel} missed the active epoch window or that epoch was already closed.${txSuffix}`
+    }
+
+    if (lowerBody.includes('assert')) {
+      return `Dark Pool intent ${pairLabel} was rejected during epoch admission. The epoch may have rolled over before the transaction finalized.${txSuffix}`
+    }
+
+    return `Dark Pool intent ${pairLabel} was rejected on-chain. This usually comes from epoch rollover, input record state, or USDCx escrow checks.${txSuffix}`
+  }
+
+  if (venue === 'orderbook') {
+    if (lowerBody.includes('assert') || lowerBody.includes('expiry') || lowerBody.includes('limit')) {
+      return `Order Book submission ${pairLabel} was rejected on-chain. The order window or limit-order constraints may have changed before confirmation.${txSuffix}`
+    }
+
+    return `Order Book submission ${pairLabel} was rejected on-chain. This can come from input record state, order constraints, or USDCx escrow checks.${txSuffix}`
   }
 
   if (lowerBody.includes('assert') || lowerBody.includes('min_out') || lowerBody.includes('finalize_swap')) {
@@ -219,6 +309,27 @@ export function useSwapExecute() {
     let submittedTxId: string | null = null
 
     try {
+      const prepareUsdcxInput = async (
+        amountRequired: bigint,
+        exclusions?: Set<string>,
+      ) => {
+        const prepTxIds: string[] = []
+        const rememberPrepTx = (txId: string) => {
+          prepTxIds.push(txId)
+        }
+
+        const prepared = await prepareUsdcxForTx(
+          walletExecute,
+          requestRecords,
+          amountRequired,
+          address,
+          exclusions,
+          rememberPrepTx,
+        )
+        await waitForPreparationTransactions(prepTxIds, walletTxStatus, setStatusMsg)
+        return prepared
+      }
+
       const config = POOL_AMM_CONFIG[poolId]
       if (!config) throw new Error(`Unknown pool ID: ${poolId}`)
 
@@ -230,9 +341,9 @@ export function useSwapExecute() {
       }
 
       let inputs: string[] = []
-      let program: string
-      let fnName: string
-      let recordIndices: number[]
+      let program = ''
+      let fnName = ''
+      let recordIndices: number[] = []
 
       if (venue === 'amm') {
         // ─── AMM Swap ───
@@ -341,7 +452,7 @@ export function useSwapExecute() {
         setTxStatus('pending')
         const finalStatus = await pollTransactionStatus(id, setTxStatus, 3_000, 180_000, walletTxStatus)
         if (finalStatus === 'rejected') {
-          setError(await buildSwapRejectionMessage(id, `${fromToken}/${toToken}`, walletTxStatus))
+          setError(await buildSwapRejectionMessage(id, `${fromToken}/${toToken}`, venue, walletTxStatus))
           setProofStatus('idle')
           window.dispatchEvent(new Event('privadex:txEnd'))
           return false
@@ -353,35 +464,59 @@ export function useSwapExecute() {
           throw new Error('Dark Pool only supports ALEO/USDCx pair. Use AMM for this trade.')
         }
         program = PROGRAMS.DARKPOOL
-        const heightRes = await fetch('https://api.explorer.provable.com/v1/testnet/latest/height', { signal: AbortSignal.timeout(5000) })
-        const height = parseInt(await heightRes.text())
-        const epochId = currentEpochId(height)
-        const nonce = randomNonce()
+        const buildDarkPoolSubmission = async (excludedUsdcx?: Set<string>) => {
+          const nonce = randomNonce()
 
-        if (isAtoB) {
-          // SELL ALEO → USDCx
-          setStatusMsg('Preparing ALEO record...')
-          await prepareExactCreditsRecord(walletExecute, requestRecords, address, amountInBig, (msg) => setStatusMsg(msg))
-          const freshCreds = await fetchRecordsRobust(requestRecords, 'credits.aleo')
-          const exactCred = freshCreds.filter((r: any) => !r.spent && !isRecordManuallySpent(r)).find((r: any) => getRecordCredits(r) === amountInBig)
-          if (!exactCred) throw new Error('Credits record not found.')
-          usedRecord = exactCred.recordPlaintext || exactCred.plaintext
-          inputs = buildDarkSellAleoInputs(usedRecord!, poolId, minOut, nonce, epochId)
-          fnName = DARKPOOL_FNS.SUBMIT_SELL_ALEO
-          recordIndices = [0]
-        } else {
+          if (isAtoB) {
+            // SELL ALEO → USDCx
+            setStatusMsg('Preparing ALEO record...')
+            await prepareExactCreditsRecord(walletExecute, requestRecords, address, amountInBig, (msg) => setStatusMsg(msg))
+            const freshCreds = await fetchRecordsRobust(requestRecords, 'credits.aleo')
+            const exactCred = freshCreds.filter((r: any) => !r.spent && !isRecordManuallySpent(r)).find((r: any) => getRecordCredits(r) === amountInBig)
+            if (!exactCred) throw new Error('Credits record not found.')
+            usedRecord = exactCred.recordPlaintext || exactCred.plaintext
+            setStatusMsg('Checking dark pool epoch...')
+            const { epochId } = await waitForSafeDarkPoolEpochWindow(setStatusMsg)
+            inputs = buildDarkSellAleoInputs(usedRecord!, poolId, minOut, nonce, epochId)
+            fnName = DARKPOOL_FNS.SUBMIT_SELL_ALEO
+            recordIndices = [0]
+            return
+          }
+
           // BUY ALEO ← USDCx
           setStatusMsg('Preparing USDCx record...')
-          const { tokenRecord: usdcxRec, merkleProofs } = await prepareUsdcxForTx(walletExecute, requestRecords, amountInBig, address)
+          const { tokenRecord: usdcxRec, merkleProofs } = await prepareUsdcxInput(amountInBig, excludedUsdcx)
           usedRecord = usdcxRec
+          setStatusMsg('Checking dark pool epoch...')
+          const { epochId } = await waitForSafeDarkPoolEpochWindow(setStatusMsg)
           inputs = buildDarkBuyAleoInputs(usdcxRec, merkleProofs, poolId, amountInBig, minOut, nonce, epochId)
           fnName = DARKPOOL_FNS.SUBMIT_BUY_ALEO
           recordIndices = [0]
         }
 
+        await buildDarkPoolSubmission()
+
         setStatusMsg(null)
         setProofStatus('proving')
-        const id = await executeOnChain(walletExecute, program, fnName, inputs, txFee, false, recordIndices)
+        let id: string
+        try {
+          id = await executeOnChain(walletExecute, program, fnName, inputs, txFee, false, recordIndices)
+        } catch (execErr: any) {
+          const execMsg = execErr?.message ?? 'Dark Pool submission failed.'
+          const isStaleInput =
+            execMsg.includes('already exists in the ledger') ||
+            execMsg.includes('input ID') ||
+            execMsg.includes('spent')
+
+          if (!isStaleInput) throw execErr
+
+          console.warn('[SwapExecute] Dark Pool stale input detected, retrying with refreshed records', execMsg)
+          setStatusMsg('Refreshing records after stale-input error...')
+          await buildDarkPoolSubmission(!isAtoB && usedRecord ? new Set([usedRecord]) : undefined)
+          setStatusMsg(null)
+          setProofStatus('proving')
+          id = await executeOnChain(walletExecute, program, fnName, inputs, txFee, false, recordIndices)
+        }
         if (usedRecord) markRecordSpent(usedRecord)
         submittedTxId = id
         setTxId(id)
@@ -389,7 +524,7 @@ export function useSwapExecute() {
         setTxStatus('pending')
         const finalStatus = await pollTransactionStatus(id, setTxStatus, 3_000, 180_000, walletTxStatus)
         if (finalStatus === 'rejected') {
-          setError(await buildSwapRejectionMessage(id, `${fromToken}/${toToken}`, walletTxStatus))
+          setError(await buildSwapRejectionMessage(id, `${fromToken}/${toToken}`, venue, walletTxStatus))
           setProofStatus('idle')
           window.dispatchEvent(new Event('privadex:txEnd'))
           return false
@@ -401,34 +536,56 @@ export function useSwapExecute() {
           throw new Error('Order Book only supports ALEO/USDCx pair. Use AMM for this trade.')
         }
         program = PROGRAMS.ORDERBOOK
-        const heightRes = await fetch('https://api.explorer.provable.com/v1/testnet/latest/height', { signal: AbortSignal.timeout(5000) })
-        const height = parseInt(await heightRes.text())
-        const nonce = randomNonce()
-        const expiryBl = expiryInEpochs(height, 2) // 2 epochs ≈ 4min
-        const limitPrice = priceToFixed(Number(minOut) / Number(amountInBig) || 0.01)
+        const buildOrderBookSubmission = async (excludedUsdcx?: Set<string>) => {
+          const height = await fetchLatestTestnetHeight()
+          const nonce = randomNonce()
+          const expiryBl = expiryInEpochs(height, 2) // 2 epochs ≈ 4min
+          const limitPrice = priceToFixed(Number(minOut) / Number(amountInBig) || 0.01)
 
-        if (isAtoB) {
-          setStatusMsg('Preparing ALEO record...')
-          await prepareExactCreditsRecord(walletExecute, requestRecords, address, amountInBig, (msg) => setStatusMsg(msg))
-          const freshCreds = await fetchRecordsRobust(requestRecords, 'credits.aleo')
-          const exactCred = freshCreds.filter((r: any) => !r.spent && !isRecordManuallySpent(r)).find((r: any) => getRecordCredits(r) === amountInBig)
-          if (!exactCred) throw new Error('Credits record not found.')
-          usedRecord = exactCred.recordPlaintext || exactCred.plaintext
-          inputs = buildSellLimitInputs(usedRecord!, poolId, limitPrice, expiryBl, nonce)
-          fnName = ORDERBOOK_FNS.PLACE_SELL_LIMIT
-          recordIndices = [0]
-        } else {
+          if (isAtoB) {
+            setStatusMsg('Preparing ALEO record...')
+            await prepareExactCreditsRecord(walletExecute, requestRecords, address, amountInBig, (msg) => setStatusMsg(msg))
+            const freshCreds = await fetchRecordsRobust(requestRecords, 'credits.aleo')
+            const exactCred = freshCreds.filter((r: any) => !r.spent && !isRecordManuallySpent(r)).find((r: any) => getRecordCredits(r) === amountInBig)
+            if (!exactCred) throw new Error('Credits record not found.')
+            usedRecord = exactCred.recordPlaintext || exactCred.plaintext
+            inputs = buildSellLimitInputs(usedRecord!, poolId, limitPrice, expiryBl, nonce)
+            fnName = ORDERBOOK_FNS.PLACE_SELL_LIMIT
+            recordIndices = [0]
+            return
+          }
+
           setStatusMsg('Preparing USDCx record...')
-          const { tokenRecord: usdcxRec, merkleProofs } = await prepareUsdcxForTx(walletExecute, requestRecords, amountInBig, address)
+          const { tokenRecord: usdcxRec, merkleProofs } = await prepareUsdcxInput(amountInBig, excludedUsdcx)
           usedRecord = usdcxRec
           inputs = buildBuyLimitInputs(usdcxRec, merkleProofs, poolId, amountInBig, limitPrice, expiryBl, nonce)
           fnName = ORDERBOOK_FNS.PLACE_BUY_LIMIT
           recordIndices = [0]
         }
 
+        await buildOrderBookSubmission()
+
         setStatusMsg(null)
         setProofStatus('proving')
-        const id = await executeOnChain(walletExecute, program, fnName, inputs, txFee, false, recordIndices)
+        let id: string
+        try {
+          id = await executeOnChain(walletExecute, program, fnName, inputs, txFee, false, recordIndices)
+        } catch (execErr: any) {
+          const execMsg = execErr?.message ?? 'Order Book submission failed.'
+          const isStaleInput =
+            execMsg.includes('already exists in the ledger') ||
+            execMsg.includes('input ID') ||
+            execMsg.includes('spent')
+
+          if (!isStaleInput) throw execErr
+
+          console.warn('[SwapExecute] Order Book stale input detected, retrying with refreshed records', execMsg)
+          setStatusMsg('Refreshing records after stale-input error...')
+          await buildOrderBookSubmission(!isAtoB && usedRecord ? new Set([usedRecord]) : undefined)
+          setStatusMsg(null)
+          setProofStatus('proving')
+          id = await executeOnChain(walletExecute, program, fnName, inputs, txFee, false, recordIndices)
+        }
         if (usedRecord) markRecordSpent(usedRecord)
         submittedTxId = id
         setTxId(id)
@@ -436,7 +593,7 @@ export function useSwapExecute() {
         setTxStatus('pending')
         const finalStatus = await pollTransactionStatus(id, setTxStatus, 3_000, 180_000, walletTxStatus)
         if (finalStatus === 'rejected') {
-          setError(await buildSwapRejectionMessage(id, `${fromToken}/${toToken}`, walletTxStatus))
+          setError(await buildSwapRejectionMessage(id, `${fromToken}/${toToken}`, venue, walletTxStatus))
           setProofStatus('idle')
           window.dispatchEvent(new Event('privadex:txEnd'))
           return false

@@ -9,7 +9,7 @@ import { usePoolOperations } from '../hooks/usePoolOperations'
 import { useOnChainPools } from '../hooks/useOnChainPools'
 import { useMyLpPositions } from '../hooks/useMyLpPositions'
 import { POOL_IDS } from '../lib/programs'
-import { formatUsd, formatNumber } from '../data/tokens'
+import { formatUsd, formatNumber, formatAmount } from '../data/tokens'
 
 type Tab = 'pools' | 'positions'
 
@@ -261,13 +261,13 @@ export default function PoolPage() {
                             <div>
                               <div className="text-[10px] font-mono text-text-tertiary uppercase">Reserve {pool.tokenA}</div>
                               <div className="font-mono text-sm text-text-primary tabular-nums">
-                                {formatNumber(pool.reserveA)}
+                                {formatAmount(pool.reserveA)}
                               </div>
                             </div>
                             <div>
                               <div className="text-[10px] font-mono text-text-tertiary uppercase">Reserve {pool.tokenB}</div>
                               <div className="font-mono text-sm text-text-primary tabular-nums">
-                                {formatNumber(pool.reserveB)}
+                                {formatAmount(pool.reserveB)}
                               </div>
                             </div>
                             <div>
@@ -402,13 +402,13 @@ export default function PoolPage() {
                     <div>
                       <div className="text-[10px] font-mono text-text-tertiary uppercase">{pos.tokenA}</div>
                       <div className="font-mono text-sm text-text-primary tabular-nums">
-                        {shieldActive ? '••••' : formatNumber(pos.tokenAAmount, pos.tokenA === 'ETHx' ? 3 : 0)}
+                        {shieldActive ? '••••' : formatAmount(pos.tokenAAmount)}
                       </div>
                     </div>
                     <div>
                       <div className="text-[10px] font-mono text-text-tertiary uppercase">{pos.tokenB}</div>
                       <div className="font-mono text-sm text-text-primary tabular-nums">
-                        {shieldActive ? '••••' : formatNumber(pos.tokenBAmount, 0)}
+                        {shieldActive ? '••••' : formatAmount(pos.tokenBAmount)}
                       </div>
                     </div>
                   </div>
