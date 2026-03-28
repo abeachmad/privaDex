@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { useWallet } from '../../context/WalletContext'
 import { shortenAddress } from '../../data/tokens'
+import privadexLogo from '../../assets/tokens/privadex-logo.png'
 import WalletModal from '../shared/WalletModal'
 import CryptoTicker from '../shared/CryptoTicker'
 
@@ -49,12 +50,9 @@ export default function AppShell() {
         <div className="container-app">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
-            <NavLink to="/" className="flex items-center gap-3 group">
-              <div className="relative w-8 h-8">
-                <div className="absolute inset-0 rounded-lg bg-emerald/20 group-hover:bg-emerald/30 transition-colors duration-300" />
-                <div className="absolute inset-[3px] rounded-[5px] bg-obsidian flex items-center justify-center">
-                  <span className="text-emerald font-mono text-xs font-semibold">P</span>
-                </div>
+            <NavLink to="/" className="flex items-center gap-2.5 group">
+              <div className="w-10 h-10 rounded-full overflow-hidden bg-white shrink-0">
+                <img src={privadexLogo} alt="PrivaDEX" className="w-full h-full object-cover scale-150" />
               </div>
               <div className="hidden sm:block">
                 <span className="font-display text-lg text-text-primary tracking-tight">PrivaDEX</span>
@@ -203,7 +201,10 @@ export default function AppShell() {
       <footer className="border-t border-border py-8">
         <div className="container-app">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-full overflow-hidden bg-white opacity-60 shrink-0">
+                <img src={privadexLogo} alt="PrivaDEX" className="w-full h-full object-cover scale-150" />
+              </div>
               <span className="font-display text-sm text-text-tertiary">PrivaDEX</span>
               <span className="text-text-ghost text-xs">·</span>
               <span className="text-text-ghost text-xs font-mono">Aleo Testnet</span>

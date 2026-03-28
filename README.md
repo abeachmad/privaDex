@@ -1,6 +1,16 @@
-# PrivaDEX Frontend
+<p align="center">
+  <img src="public/privadex-logo.png" alt="PrivaDEX" width="120" />
+</p>
 
-Privacy-first decentralized exchange on **Aleo** — fully shielded swaps, liquidity pools, dark pool, and order book powered by zero-knowledge proofs.
+<h1 align="center">PrivaDEX</h1>
+
+<p align="center">
+  Privacy-first decentralized exchange on <strong>Aleo</strong> — fully shielded swaps, liquidity pools, dark pool, and order book powered by zero-knowledge proofs.
+</p>
+
+<p align="center">
+  <a href="https://priva-dex.vercel.app/"><strong>Live Demo</strong></a>
+</p>
 
 ## Tech Stack
 

@@ -5,6 +5,7 @@ import {
   ArrowLeftRight, ChevronRight, Layers, Binary, Fingerprint, GitBranch,
 } from 'lucide-react'
 import { TOKENS } from '../data/tokens'
+import privadexLogo from '../assets/tokens/privadex-logo.png'
 
 const FADE_UP = {
   initial: { opacity: 0, y: 24 },
@@ -55,12 +56,9 @@ export default function Landing() {
 
         {/* Navigation */}
         <nav className="relative z-20 flex items-center justify-between px-6 lg:px-12 py-6">
-          <div className="flex items-center gap-3">
-            <div className="relative w-9 h-9">
-              <div className="absolute inset-0 rounded-lg bg-emerald/20" />
-              <div className="absolute inset-[3px] rounded-[5px] bg-obsidian flex items-center justify-center">
-                <span className="text-emerald font-mono text-sm font-semibold">P</span>
-              </div>
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-full overflow-hidden bg-white shrink-0">
+              <img src={privadexLogo} alt="PrivaDEX" className="w-full h-full object-cover scale-150" />
             </div>
             <span className="font-display text-xl text-text-primary tracking-tight">PrivaDEX</span>
           </div>
@@ -523,12 +521,9 @@ export default function Landing() {
       {/* Footer */}
       <footer className="border-t border-border py-12 px-6">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-3">
-            <div className="relative w-7 h-7">
-              <div className="absolute inset-0 rounded-md bg-emerald/20" />
-              <div className="absolute inset-[2px] rounded-[4px] bg-obsidian flex items-center justify-center">
-                <span className="text-emerald font-mono text-[10px] font-semibold">P</span>
-              </div>
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-full overflow-hidden bg-white opacity-60 shrink-0">
+              <img src={privadexLogo} alt="PrivaDEX" className="w-full h-full object-cover scale-150" />
             </div>
             <span className="font-display text-sm text-text-tertiary">PrivaDEX</span>
             <span className="text-text-ghost text-xs font-mono ml-2">Aleo Testnet</span>
