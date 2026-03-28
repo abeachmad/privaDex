@@ -8,7 +8,7 @@ import {
   executeOnChain, pollTransactionStatus,
   resolveOnChainTransactionId, fetchTransactionBody,
   prepareCreditsRecordForTx, prepareExactCreditsRecord, prepareUsdcxForTx, prepareRegistryTokenForTx,
-  fetchRecordsRobust, getRecordCredits, getPublicAleoBalance, fetchPoolReservesStrict, cpmmOutputWithFee,
+  fetchRecordsForTx, getRecordCredits, getPublicAleoBalance, fetchPoolReservesStrict, cpmmOutputWithFee,
   registryTokenIdForSymbol,
 } from '../lib/aleo'
 import { isRecordManuallySpent, markRecordSpent } from '../lib/spentRecords'
@@ -37,7 +37,7 @@ export type ProofStatus = 'idle' | 'preparing' | 'proving' | 'verified'
 
 const TESTNET_HEIGHT_URL = 'https://api.explorer.provable.com/v1/testnet/latest/height'
 const DARKPOOL_EPOCH_DURATION = 120
-const DARKPOOL_MIN_BLOCKS_LEFT = 10
+const DARKPOOL_MIN_BLOCKS_LEFT = 30
 
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -330,6 +330,29 @@ export function useSwapExecute() {
         return prepared
       }
 
+      const prepareRegistryTokenInput = async (
+        regId: string,
+        amountRequired: bigint,
+        exclusions?: Set<string>,
+      ) => {
+        const prepTxIds: string[] = []
+        const rememberPrepTx = (txId: string) => {
+          prepTxIds.push(txId)
+        }
+
+        const tokenRecord = await prepareRegistryTokenForTx(
+          walletExecute,
+          requestRecords,
+          regId,
+          amountRequired,
+          address,
+          exclusions,
+          rememberPrepTx,
+        )
+        await waitForPreparationTransactions(prepTxIds, walletTxStatus, setStatusMsg)
+        return tokenRecord
+      }
+
       const config = POOL_AMM_CONFIG[poolId]
       if (!config) throw new Error(`Unknown pool ID: ${poolId}`)
 
@@ -347,104 +370,120 @@ export function useSwapExecute() {
 
       if (venue === 'amm') {
         // ─── AMM Swap ───
-        program = config.program
+        const buildAmmSubmission = async (excludedRecord?: Set<string>) => {
+          program = config.program
 
-        if (isAtoB) {
-          // Token A → Token B
-          if (config.tokenAIsCredits) {
-            // ALEO → X
-            setStatusMsg('Preparing ALEO record...')
-            usedRecord = await prepareCreditsRecordForTx(
-              walletExecute,
-              requestRecords,
-              amountInBig,
-              address,
-              (msg) => setStatusMsg(msg),
-            )
-            fnName = config.swapAForB
-            recordIndices = [0]
-          } else {
-            // Registry/USDCx token → X
-            const regId = registryTokenIdForSymbol(config.symbolA)
-            if (regId) {
-              setStatusMsg(`Preparing ${config.symbolA} record...`)
-              usedRecord = await prepareRegistryTokenForTx(walletExecute, requestRecords, regId, amountInBig, address)
+          if (isAtoB) {
+            // Token A → Token B
+            if (config.tokenAIsCredits) {
+              // ALEO → X
+              setStatusMsg('Preparing ALEO record...')
+              usedRecord = await prepareCreditsRecordForTx(
+                walletExecute,
+                requestRecords,
+                amountInBig,
+                address,
+                (msg) => setStatusMsg(msg),
+                excludedRecord,
+              )
               fnName = config.swapAForB
               recordIndices = [0]
             } else {
-              throw new Error(`Unsupported token A: ${config.symbolA}`)
+              const regId = registryTokenIdForSymbol(config.symbolA)
+              if (!regId) throw new Error(`Unsupported token A: ${config.symbolA}`)
+              setStatusMsg(`Preparing ${config.symbolA} record...`)
+              usedRecord = await prepareRegistryTokenInput(regId, amountInBig, excludedRecord)
+              fnName = config.swapAForB
+              recordIndices = [0]
             }
-          }
-        } else {
-          // Token B → Token A
-          if (config.symbolB === 'USDCx') {
-            setStatusMsg('Preparing USDCx record...')
-            const { tokenRecord: usdcxRec, merkleProofs } = await prepareUsdcxForTx(walletExecute, requestRecords, amountInBig, address)
-            usedRecord = usdcxRec
-            inputs = [usdcxRec, merkleProofs]
-            fnName = config.swapBForA
-            recordIndices = [0]
           } else {
-            const regId = registryTokenIdForSymbol(config.symbolB)
-            if (regId) {
-              setStatusMsg(`Preparing ${config.symbolB} record...`)
-              usedRecord = await prepareRegistryTokenForTx(walletExecute, requestRecords, regId, amountInBig, address)
+            // Token B → Token A
+            if (config.symbolB === 'USDCx') {
+              setStatusMsg('Preparing USDCx record...')
+              const { tokenRecord: usdcxRec, merkleProofs } = await prepareUsdcxInput(amountInBig, excludedRecord)
+              usedRecord = usdcxRec
+              inputs = [usdcxRec, merkleProofs]
               fnName = config.swapBForA
               recordIndices = [0]
             } else {
-              throw new Error(`Unsupported token B: ${config.symbolB}`)
+              const regId = registryTokenIdForSymbol(config.symbolB)
+              if (!regId) throw new Error(`Unsupported token B: ${config.symbolB}`)
+              setStatusMsg(`Preparing ${config.symbolB} record...`)
+              usedRecord = await prepareRegistryTokenInput(regId, amountInBig, excludedRecord)
+              fnName = config.swapBForA
+              recordIndices = [0]
             }
           }
-        }
 
-        const liveReserves = await fetchPoolReservesStrict(poolId, config.program)
-        const [reserveIn, reserveOut] = isAtoB
-          ? [liveReserves.reserveA, liveReserves.reserveB]
-          : [liveReserves.reserveB, liveReserves.reserveA]
-        const liveOut = cpmmOutputWithFee(amountInBig, reserveIn, reserveOut, liveReserves.feesBps)
-        let routerPlan: AtomicRoutePlan | null = null
-        try {
-          if (usedRecord) {
-            routerPlan = await chooseAtomicRouterPlan(poolId, isAtoB, amountInBig, minOut, usedRecord)
+          const liveReserves = await fetchPoolReservesStrict(poolId, config.program)
+          const [reserveIn, reserveOut] = isAtoB
+            ? [liveReserves.reserveA, liveReserves.reserveB]
+            : [liveReserves.reserveB, liveReserves.reserveA]
+          const liveOut = cpmmOutputWithFee(amountInBig, reserveIn, reserveOut, liveReserves.feesBps)
+          let routerPlan: AtomicRoutePlan | null = null
+          try {
+            if (usedRecord) {
+              routerPlan = await chooseAtomicRouterPlan(poolId, isAtoB, amountInBig, minOut, usedRecord)
+            }
+          } catch (routeError) {
+            console.warn('[SwapExecute] Atomic router quote failed, falling back to direct AMM:', routeError)
           }
-        } catch (routeError) {
-          console.warn('[SwapExecute] Atomic router quote failed, falling back to direct AMM:', routeError)
-        }
 
-        const bestLiveOut = routerPlan && routerPlan.liveOut > liveOut ? routerPlan.liveOut : liveOut
-        if (bestLiveOut < minOut) {
-          throw new Error(
-            `Swap output moved below your minimum received. Best live output is ${(Number(bestLiveOut) / 10 ** decimals).toFixed(6)} ${toToken}, minimum is ${(Number(minOut) / 10 ** decimals).toFixed(6)} ${toToken}.`
-          )
-        }
+          const bestLiveOut = routerPlan && routerPlan.liveOut > liveOut ? routerPlan.liveOut : liveOut
+          if (bestLiveOut < minOut) {
+            throw new Error(
+              `Swap output moved below your minimum received. Best live output is ${(Number(bestLiveOut) / 10 ** decimals).toFixed(6)} ${toToken}, minimum is ${(Number(minOut) / 10 ** decimals).toFixed(6)} ${toToken}.`
+            )
+          }
 
-        if (routerPlan && routerPlan.liveOut > liveOut) {
-          program = PROGRAMS.ROUTER
-          fnName = routerPlan.fnName
-          inputs = routerPlan.inputs
-          setStatusMsg(`Routing shielded AMM swap via ${routerPlan.label}...`)
-        } else if (isAtoB) {
-          if (config.tokenAIsCredits) {
-            inputs = config.symbolB === 'USDCx'
-              ? buildSwapAleoForUsdcxInputs(usedRecord!, poolId, amountInBig, liveReserves, minOut)
-              : buildSwapNativeForTokenInputs(usedRecord!, poolId, amountInBig, liveReserves, minOut)
+          if (routerPlan && routerPlan.liveOut > liveOut) {
+            program = PROGRAMS.ROUTER
+            fnName = routerPlan.fnName
+            inputs = routerPlan.inputs
+            setStatusMsg(`Routing shielded AMM swap via ${routerPlan.label}...`)
+          } else if (isAtoB) {
+            if (config.tokenAIsCredits) {
+              inputs = config.symbolB === 'USDCx'
+                ? buildSwapAleoForUsdcxInputs(usedRecord!, poolId, amountInBig, liveReserves, minOut)
+                : buildSwapNativeForTokenInputs(usedRecord!, poolId, amountInBig, liveReserves, minOut)
+            } else {
+              inputs = config.symbolB === 'USDCx'
+                ? buildSwapTokenForUsdcxInputs(usedRecord!, poolId, amountInBig, liveReserves, minOut)
+                : buildPureTokenSwapInputs(usedRecord!, poolId, amountInBig, liveReserves, minOut)
+            }
+          } else if (config.symbolB === 'USDCx') {
+            const [usdcxRec, merkleProofs] = inputs
+            inputs = config.tokenAIsCredits
+              ? buildSwapUsdcxForAleoInputs(usdcxRec, merkleProofs, poolId, amountInBig, liveReserves, minOut)
+              : buildSwapUsdcxForTokenInputs(usdcxRec, merkleProofs, poolId, amountInBig, liveReserves, minOut)
           } else {
-            inputs = config.symbolB === 'USDCx'
-              ? buildSwapTokenForUsdcxInputs(usedRecord!, poolId, amountInBig, liveReserves, minOut)
-              : buildPureTokenSwapInputs(usedRecord!, poolId, amountInBig, liveReserves, minOut)
+            inputs = buildPureTokenSwapInputs(usedRecord!, poolId, amountInBig, liveReserves, minOut)
           }
-        } else if (config.symbolB === 'USDCx') {
-          const [usdcxRec, merkleProofs] = inputs
-          inputs = config.tokenAIsCredits
-            ? buildSwapUsdcxForAleoInputs(usdcxRec, merkleProofs, poolId, amountInBig, liveReserves, minOut)
-            : buildSwapUsdcxForTokenInputs(usdcxRec, merkleProofs, poolId, amountInBig, liveReserves, minOut)
-        } else {
-          inputs = buildPureTokenSwapInputs(usedRecord!, poolId, amountInBig, liveReserves, minOut)
         }
+
+        await buildAmmSubmission()
 
         setStatusMsg(null)
         setProofStatus('proving')
-        const id = await executeOnChain(walletExecute, program, fnName, inputs, txFee, false, recordIndices)
+        let id: string
+        try {
+          id = await executeOnChain(walletExecute, program, fnName, inputs, txFee, false, recordIndices)
+        } catch (execErr: any) {
+          const execMsg = execErr?.message ?? 'Swap failed.'
+          const isStaleInput =
+            execMsg.includes('already exists in the ledger') ||
+            execMsg.includes('input ID') ||
+            execMsg.includes('spent')
+
+          if (!isStaleInput) throw execErr
+
+          console.warn('[SwapExecute] AMM stale input detected, retrying with refreshed records', execMsg)
+          setStatusMsg('Refreshing records after stale-input error...')
+          await buildAmmSubmission(usedRecord ? new Set([usedRecord]) : undefined)
+          setStatusMsg(null)
+          setProofStatus('proving')
+          id = await executeOnChain(walletExecute, program, fnName, inputs, txFee, false, recordIndices)
+        }
         if (usedRecord) markRecordSpent(usedRecord)
         submittedTxId = id
         setTxId(id)
@@ -471,7 +510,7 @@ export function useSwapExecute() {
             // SELL ALEO → USDCx
             setStatusMsg('Preparing ALEO record...')
             await prepareExactCreditsRecord(walletExecute, requestRecords, address, amountInBig, (msg) => setStatusMsg(msg))
-            const freshCreds = await fetchRecordsRobust(requestRecords, 'credits.aleo')
+            const freshCreds = await fetchRecordsForTx(requestRecords, 'credits.aleo')
             const exactCred = freshCreds.filter((r: any) => !r.spent && !isRecordManuallySpent(r)).find((r: any) => getRecordCredits(r) === amountInBig)
             if (!exactCred) throw new Error('Credits record not found.')
             usedRecord = exactCred.recordPlaintext || exactCred.plaintext
@@ -545,7 +584,7 @@ export function useSwapExecute() {
           if (isAtoB) {
             setStatusMsg('Preparing ALEO record...')
             await prepareExactCreditsRecord(walletExecute, requestRecords, address, amountInBig, (msg) => setStatusMsg(msg))
-            const freshCreds = await fetchRecordsRobust(requestRecords, 'credits.aleo')
+            const freshCreds = await fetchRecordsForTx(requestRecords, 'credits.aleo')
             const exactCred = freshCreds.filter((r: any) => !r.spent && !isRecordManuallySpent(r)).find((r: any) => getRecordCredits(r) === amountInBig)
             if (!exactCred) throw new Error('Credits record not found.')
             usedRecord = exactCred.recordPlaintext || exactCred.plaintext

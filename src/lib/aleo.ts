@@ -57,6 +57,13 @@ export interface AleoRecord {
   spent:    boolean;
 }
 
+interface RecordFetchOptions {
+  preferScanner?: boolean;
+  skipCache?: boolean;
+  cacheMaxAgeMs?: number;
+  scannerRecordName?: string;
+}
+
 // ─── Execute a program transition ─────────────────────────────────────────────
 /**
  * Calls `executeTransaction` on the connected Shield Wallet.
@@ -561,6 +568,17 @@ function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
 
+const TX_CRITICAL_RECORD_FETCH: RecordFetchOptions = Object.freeze({
+  preferScanner: true,
+  skipCache: true,
+});
+
+const TX_CRITICAL_TOKEN_FETCH: RecordFetchOptions = Object.freeze({
+  preferScanner: true,
+  skipCache: true,
+  scannerRecordName: "Token",
+});
+
 // ─── Robust record fetcher ──────────────────────────────────────────────────
 /**
  * Fetches records for a program using the React context requestRecords first,
@@ -571,55 +589,91 @@ function sleep(ms: number): Promise<void> {
 export async function fetchRecordsRobust(
   requestRecords: any,
   program: string,
+  options?: RecordFetchOptions,
 ): Promise<any[]> {
-  // Try 1: React context requestRecords
-  try {
-    const recs = requestRecords
-      ? await requestRecords(program, true)
-      : [];
-    if (Array.isArray(recs) && recs.length > 0) {
-      console.log(`[fetchRecordsRobust] React context(${program}) returned ${recs.length} records`);
-      return recs;
-    }
-  } catch (e) {
-    console.warn(`[fetchRecordsRobust] React requestRecords(${program}) failed:`, e);
-  }
+  const preferScanner = options?.preferScanner ?? false;
+  const skipCache = options?.skipCache ?? false;
+  const cacheMaxAgeMs = options?.cacheMaxAgeMs ?? 120_000;
+  const scannerRecordName = options?.scannerRecordName;
 
-  // Try 2: Direct window.shield access (bypasses React state issues)
-  try {
-    const shield = (window as any).shield;
-    if (shield?.requestRecords) {
-      const recs = await shield.requestRecords(program, true);
-      if (Array.isArray(recs) && recs.length > 0) {
-        console.log(`[fetchRecordsRobust] window.shield(${program}) returned ${recs.length} records`);
-        return recs;
-      }
-    }
-  } catch (e) {
-    console.warn(`[fetchRecordsRobust] window.shield(${program}) failed:`, e);
-  }
-
-  // Try 3: Shared record cache (populated by BalanceDropdown and other components)
-  const cached = getCachedRecords(program);
-  if (cached.length > 0) {
-    console.log(`[fetchRecordsRobust] Using cached records for ${program}: ${cached.length} records`);
-    return cached;
-  }
-
-  // Try 4: Provable Record Scanner (most reliable, but requires registration)
-  if (isScannerReady()) {
+  const fetchFromScanner = async (): Promise<any[]> => {
+    if (!isScannerReady()) return [];
     try {
-      const recs = await fetchRecordsFromScanner(program);
+      const recs = await fetchRecordsFromScanner(program, scannerRecordName);
       if (recs.length > 0) {
-        console.log(`[fetchRecordsRobust] RecordScanner(${program}) returned ${recs.length} records`);
+        console.log(`[fetchRecordsRobust] RecordScanner(${program}${scannerRecordName ? `/${scannerRecordName}` : ""}) returned ${recs.length} records`);
         return recs;
       }
     } catch (e) {
       console.warn(`[fetchRecordsRobust] RecordScanner(${program}) failed:`, e);
     }
+    return [];
+  };
+
+  const fetchFromWallet = async (): Promise<any[]> => {
+    // Try 1: React context requestRecords
+    try {
+      const recs = requestRecords
+        ? await requestRecords(program, true)
+        : [];
+      if (Array.isArray(recs) && recs.length > 0) {
+        console.log(`[fetchRecordsRobust] React context(${program}) returned ${recs.length} records`);
+        return recs;
+      }
+    } catch (e) {
+      console.warn(`[fetchRecordsRobust] React requestRecords(${program}) failed:`, e);
+    }
+
+    // Try 2: Direct window.shield access (bypasses React state issues)
+    try {
+      const shield = (window as any).shield;
+      if (shield?.requestRecords) {
+        const recs = await shield.requestRecords(program, true);
+        if (Array.isArray(recs) && recs.length > 0) {
+          console.log(`[fetchRecordsRobust] window.shield(${program}) returned ${recs.length} records`);
+          return recs;
+        }
+      }
+    } catch (e) {
+      console.warn(`[fetchRecordsRobust] window.shield(${program}) failed:`, e);
+    }
+
+    return [];
+  };
+
+  if (preferScanner) {
+    const scannerRecords = await fetchFromScanner();
+    if (scannerRecords.length > 0) return scannerRecords;
+  }
+
+  const walletRecords = await fetchFromWallet();
+  if (walletRecords.length > 0) return walletRecords;
+
+  if (!skipCache) {
+    const cached = getCachedRecords(program, cacheMaxAgeMs);
+    if (cached.length > 0) {
+      console.log(`[fetchRecordsRobust] Using cached records for ${program}: ${cached.length} records`);
+      return cached;
+    }
+  }
+
+  if (!preferScanner) {
+    const scannerRecords = await fetchFromScanner();
+    if (scannerRecords.length > 0) return scannerRecords;
   }
 
   return [];
+}
+
+export async function fetchRecordsForTx(
+  requestRecords: any,
+  program: string,
+  scannerRecordName?: string,
+): Promise<any[]> {
+  return fetchRecordsRobust(requestRecords, program, {
+    ...TX_CRITICAL_RECORD_FETCH,
+    ...(scannerRecordName ? { scannerRecordName } : {}),
+  });
 }
 
 // ─── Smart split helper ──────────────────────────────────────────────────────
@@ -644,8 +698,10 @@ export async function splitToExact(
   fee = 1_500_000,
 ): Promise<string> {
   // 1. Determine fee mode
-  const creditsRecs: any[] = await requestRecords("credits.aleo", true).catch(() => []);
-  const unspent = creditsRecs.filter((r: any) => !r.spent);
+  const creditsRecs = getSpendableCreditsRecords(
+    await fetchRecordsForTx(requestRecords, "credits.aleo"),
+  );
+  const unspent = creditsRecs;
 
   // Check public ALEO balance
   let publicBalance = 0n;
@@ -707,9 +763,10 @@ export async function splitToExact(
   // 3. Poll for the exact-amount record (initial 5s wait, then 3s intervals)
   await sleep(5_000);
   for (let attempt = 0; attempt < 15; attempt++) {
-    const fresh: any[] = await requestRecords("credits.aleo", true).catch(() => []);
+    const fresh = getSpendableCreditsRecords(
+      await fetchRecordsForTx(requestRecords, "credits.aleo"),
+    );
     const exact = fresh
-      .filter((r: any) => !r.spent)
       .find((r: any) => getRecordCredits(r) === targetAmount);
     if (exact) {
       console.log(`[splitToExact] Found exact record on attempt ${attempt}`);
@@ -759,7 +816,7 @@ async function pollForCreditsRecordAtLeast(
   await sleep(3_000);
   for (let attempt = 0; attempt < 20; attempt++) {
     const fresh = getSpendableCreditsRecords(
-      await fetchRecordsRobust(requestRecords, "credits.aleo"),
+      await fetchRecordsForTx(requestRecords, "credits.aleo"),
       excludedPlaintexts,
     );
     const match = selectCreditsRecord(fresh, minimumAmount);
@@ -829,7 +886,7 @@ export async function prepareCreditsRecordForTx(
   const feeBig = BigInt(JOIN_FEE);
 
   let spendable = getSpendableCreditsRecords(
-    await fetchRecordsRobust(requestRecords, "credits.aleo"),
+    await fetchRecordsForTx(requestRecords, "credits.aleo"),
     excludedPlaintexts,
   );
   let sufficient = selectCreditsRecord(spendable, requiredAmount);
@@ -853,7 +910,7 @@ export async function prepareCreditsRecordForTx(
     onStatus?.("Combining ALEO records…");
     while (true) {
       spendable = getSpendableCreditsRecords(
-        await fetchRecordsRobust(requestRecords, "credits.aleo"),
+        await fetchRecordsForTx(requestRecords, "credits.aleo"),
         excludedPlaintexts,
       );
       sufficient = selectCreditsRecord(spendable, requiredAmount);
@@ -889,7 +946,7 @@ export async function prepareCreditsRecordForTx(
     }
 
     spendable = getSpendableCreditsRecords(
-      await fetchRecordsRobust(requestRecords, "credits.aleo"),
+      await fetchRecordsForTx(requestRecords, "credits.aleo"),
       excludedPlaintexts,
     );
     sufficient = selectCreditsRecord(spendable, requiredAmount);
@@ -953,7 +1010,7 @@ export async function prepareExactCreditsRecord(
   const feeBig = BigInt(FEE);
 
   // 1. Check for exact match — no extra tx needed if it's the only record
-  const records = await fetchRecordsRobust(requestRecords, "credits.aleo");
+  const records = await fetchRecordsForTx(requestRecords, "credits.aleo");
   const nonZero = getSpendableCreditsRecords(records);
 
   const exactRec = nonZero.find((r: any) => getRecordCredits(r) === targetAmount);
@@ -996,7 +1053,7 @@ export async function prepareExactCreditsRecord(
     // Small wait for drain to settle, then return the exact record
     await sleep(3_000);
     // Re-verify the exact record still exists (auto-join might have already merged it)
-    const freshRecords = await fetchRecordsRobust(requestRecords, "credits.aleo");
+    const freshRecords = await fetchRecordsForTx(requestRecords, "credits.aleo");
     const freshExact = freshRecords
       .filter((r: any) => !r.spent && !isRecordManuallySpent(r))
       .find((r: any) => getRecordCredits(r) === targetAmount);
@@ -1118,7 +1175,7 @@ async function pollForExactCreditsRecord(
   let lastPlaintext: string | null = null;
   await sleep(3_000);
   for (let attempt = 0; attempt < 20; attempt++) {
-    const fresh = await fetchRecordsRobust(requestRecords, "credits.aleo");
+    const fresh = await fetchRecordsForTx(requestRecords, "credits.aleo");
     const match = fresh
       .filter((r: any) => !r.spent && !isRecordManuallySpent(r))
       .find((r: any) => getRecordCredits(r) === targetAmount);
@@ -1155,8 +1212,9 @@ async function pollForExactCreditsRecord(
 export async function fetchUsdcxTokenRecords(
   requestRecords: any,
   excludedPlaintexts?: Set<string>,
+  fetchOptions?: RecordFetchOptions,
 ): Promise<any[]> {
-  const allRecs = await fetchRecordsRobust(requestRecords, PROGRAMS.USDCX);
+  const allRecs = await fetchRecordsRobust(requestRecords, PROGRAMS.USDCX, fetchOptions);
   console.log(`[fetchUsdcxTokenRecords] Got ${allRecs.length} raw records from ${PROGRAMS.USDCX}`);
   return allRecs.filter((r: any) => {
     if (r.spent || isRecordManuallySpent(r)) return false;
@@ -1226,7 +1284,7 @@ async function pollForStableUsdcxTokenRecord(
   if (initialDelayMs > 0) await sleep(initialDelayMs);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const fresh = await fetchUsdcxTokenRecords(requestRecords, excludedPlaintexts);
+    const fresh = await fetchUsdcxTokenRecords(requestRecords, excludedPlaintexts, TX_CRITICAL_TOKEN_FETCH);
     const match = exactAmount != null
       ? fresh.find((r: any) => getRecordAmount(r) === exactAmount)
       : selectTokenRecord(fresh, requiredAmount);
@@ -1373,7 +1431,7 @@ export async function prepareUsdcxForTx(
   excludedPlaintexts?: Set<string>,
   onTxSubmitted?: (txId: string) => void | Promise<void>,
 ): Promise<{ tokenRecord: string; merkleProofs: string }> {
-  let records = await fetchUsdcxTokenRecords(requestRecords, excludedPlaintexts);
+  let records = await fetchUsdcxTokenRecords(requestRecords, excludedPlaintexts, TX_CRITICAL_TOKEN_FETCH);
   let privateTotal = totalUsdcxBalance(records);
 
   // Give Shield Wallet a short chance to finish background joins before we
@@ -1393,7 +1451,7 @@ export async function prepareUsdcxForTx(
     }
     if (attempt < 2) {
       await sleep(1_500);
-      records = await fetchUsdcxTokenRecords(requestRecords, excludedPlaintexts);
+      records = await fetchUsdcxTokenRecords(requestRecords, excludedPlaintexts, TX_CRITICAL_TOKEN_FETCH);
       privateTotal = totalUsdcxBalance(records);
     }
   }
@@ -1402,7 +1460,7 @@ export async function prepareUsdcxForTx(
   if (privateTotal >= requiredAmount && records.length > 1) {
     console.log(`[prepareUsdcxForTx] Joining fragmented USDCx records to reach ${(Number(requiredAmount) / 1e6).toFixed(2)}`);
     while (true) {
-      records = await fetchUsdcxTokenRecords(requestRecords, excludedPlaintexts);
+      records = await fetchUsdcxTokenRecords(requestRecords, excludedPlaintexts, TX_CRITICAL_TOKEN_FETCH);
       const sufficient = selectTokenRecord(records, requiredAmount);
       if (sufficient) {
         const pt = await pollForStableUsdcxTokenRecord(requestRecords, requiredAmount, {
@@ -1615,11 +1673,14 @@ export async function prepareSimpleTokenForTx(
 export async function fetchRegistryTokenRecords(
   requestRecords: any,
   registryTokenId: string,
+  fetchOptions?: RecordFetchOptions,
+  excludedPlaintexts?: Set<string>,
 ): Promise<any[]> {
-  const allRecs = await fetchRecordsRobust(requestRecords, PROGRAMS.TOKEN_REGISTRY);
+  const allRecs = await fetchRecordsRobust(requestRecords, PROGRAMS.TOKEN_REGISTRY, fetchOptions);
   console.log(`[fetchRegistryTokenRecords] Got ${allRecs.length} raw records from ${PROGRAMS.TOKEN_REGISTRY}, filtering for token_id=${registryTokenId}`);
   return allRecs.filter((r: any) => {
     if (r.spent || isRecordManuallySpent(r)) return false;
+    if (isExcludedRecord(r, excludedPlaintexts)) return false;
     const recordType = r.recordName || r.type || "";
     if (recordType) {
       const shortName = recordType.includes("/") ? recordType.split("/").pop() : recordType;
@@ -1663,11 +1724,12 @@ export async function convertRegistryTokenToPrivate(
   recipientAddress: string,
   amount: bigint,
   fee = 1_500_000,
+  onTxSubmitted?: (txId: string) => void | Promise<void>,
 ): Promise<string> {
   console.log(`[convertRegistryTokenToPrivate] Converting ${(Number(amount) / 1e6).toFixed(6)} of token_id=${registryTokenId} to private`);
 
   // transfer_public_to_private(token_id, recipient, amount, external_authorization_required)
-  await executeOnChain(
+  const txId = await executeOnChain(
     walletExecute,
     PROGRAMS.TOKEN_REGISTRY,
     "transfer_public_to_private",
@@ -1675,12 +1737,13 @@ export async function convertRegistryTokenToPrivate(
     fee,
     false,
   );
+  await onTxSubmitted?.(txId);
 
   // Poll for the new Token record with stability check
   let lastPlaintext: string | null = null;
   await sleep(5_000);
   for (let attempt = 0; attempt < 20; attempt++) {
-    const fresh = await fetchRegistryTokenRecords(requestRecords, registryTokenId);
+    const fresh = await fetchRegistryTokenRecords(requestRecords, registryTokenId, TX_CRITICAL_TOKEN_FETCH);
     const match = fresh.find((r: any) => getRecordAmount(r) === amount);
     if (match) {
       const pt = match.recordPlaintext || match.plaintext;
@@ -1743,8 +1806,15 @@ export async function prepareRegistryTokenForTx(
   registryTokenId: string,
   requiredAmount: bigint,
   address?: string,
+  excludedPlaintexts?: Set<string>,
+  onTxSubmitted?: (txId: string) => void | Promise<void>,
 ): Promise<string> {
-  const records = await fetchRegistryTokenRecords(requestRecords, registryTokenId);
+  const records = await fetchRegistryTokenRecords(
+    requestRecords,
+    registryTokenId,
+    TX_CRITICAL_TOKEN_FETCH,
+    excludedPlaintexts,
+  );
   const privateTotal = totalRegistryTokenBalance(records);
   const symbol = registryTokenId === REGISTRY_TOKEN_IDS.BTCX ? "BTCx" : "ETHx";
 
@@ -1766,7 +1836,7 @@ export async function prepareRegistryTokenForTx(
     if (publicBalance >= requiredAmount) {
       console.log(`[prepareRegistryTokenForTx] No private ${symbol} record found. Trying public -> private conversion for ${(Number(requiredAmount) / 1e6).toFixed(2)} ${symbol}`);
       return await convertRegistryTokenToPrivate(
-        walletExecute, requestRecords, registryTokenId, address, requiredAmount, 1_500_000,
+        walletExecute, requestRecords, registryTokenId, address, requiredAmount, 1_500_000, onTxSubmitted,
       );
     }
   }
