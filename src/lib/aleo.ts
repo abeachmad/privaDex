@@ -790,8 +790,9 @@ export async function joinCreditsRecords(
   record2Plaintext: string,
   minimumJoinedAmount: bigint,
   fee = 1_500_000,
+  onTxSubmitted?: (txId: string) => void | Promise<void>,
 ): Promise<string> {
-  await executeOnChain(
+  const txId = await executeOnChain(
     walletExecute,
     "credits.aleo",
     "join",
@@ -800,6 +801,7 @@ export async function joinCreditsRecords(
     false,
     [0, 1],
   );
+  await onTxSubmitted?.(txId);
 
   markRecordSpent(record1Plaintext);
   markRecordSpent(record2Plaintext);
@@ -821,6 +823,7 @@ export async function prepareCreditsRecordForTx(
   address?: string,
   onStatus?: (msg: string) => void,
   excludedPlaintexts?: Set<string>,
+  onTxSubmitted?: (txId: string) => void | Promise<void>,
 ): Promise<string> {
   const JOIN_FEE = 1_500_000;
   const feeBig = BigInt(JOIN_FEE);
@@ -881,6 +884,7 @@ export async function prepareCreditsRecordForTx(
         rightPt,
         minimumJoinedAmount,
         JOIN_FEE,
+        onTxSubmitted,
       );
     }
 
@@ -900,7 +904,7 @@ export async function prepareCreditsRecordForTx(
     publicBalance = await getPublicAleoBalance(address);
     if (publicBalance >= requiredAmount + feeBig) {
       onStatus?.("Creating ALEO record from public balance…");
-      await executeOnChain(
+      const txId = await executeOnChain(
         walletExecute,
         "credits.aleo",
         "transfer_public_to_private",
@@ -908,6 +912,7 @@ export async function prepareCreditsRecordForTx(
         JOIN_FEE,
         false,
       );
+      await onTxSubmitted?.(txId);
       return await pollForCreditsRecordAtLeast(requestRecords, requiredAmount, excludedPlaintexts);
     }
   }
@@ -1296,10 +1301,11 @@ export async function joinUsdcxTokens(
   tokenRecord2: string,
   minimumJoinedAmount = 0n,
   fee = 1_500_000,
+  onTxSubmitted?: (txId: string) => void | Promise<void>,
 ): Promise<string> {
   // join(Token, Token) → Token(combined)
   // input[0] and input[1] are records → recordIndices: [0, 1]
-  await executeOnChain(
+  const txId = await executeOnChain(
     walletExecute,
     PROGRAMS.USDCX,
     USDCX_FNS.JOIN,
@@ -1308,6 +1314,7 @@ export async function joinUsdcxTokens(
     false,
     [0, 1],
   );
+  await onTxSubmitted?.(txId);
 
   markRecordSpent(tokenRecord1);
   markRecordSpent(tokenRecord2);
@@ -1326,12 +1333,13 @@ export async function convertUsdcxToPrivate(
   recipientAddress: string,
   amount: bigint,
   fee = 1_500_000,
+  onTxSubmitted?: (txId: string) => void | Promise<void>,
 ): Promise<string> {
   console.log(`[convertUsdcxToPrivate] Converting ${(Number(amount) / 1e6).toFixed(6)} USDCx to private`);
 
   // transfer_public_to_private(address, u128) → (ComplianceRecord, Token)
   // No record inputs → no recordIndices needed
-  await executeOnChain(
+  const txId = await executeOnChain(
     walletExecute,
     PROGRAMS.USDCX,
     USDCX_FNS.TRANSFER_PUBLIC_TO_PRIVATE,
@@ -1339,6 +1347,7 @@ export async function convertUsdcxToPrivate(
     fee,
     false,
   );
+  await onTxSubmitted?.(txId);
 
   // Wallets can auto-join newly created Token records, so accept any stable
   // private Token that still covers the requested amount.
@@ -1362,6 +1371,7 @@ export async function prepareUsdcxForTx(
   requiredAmount: bigint,
   address?: string,
   excludedPlaintexts?: Set<string>,
+  onTxSubmitted?: (txId: string) => void | Promise<void>,
 ): Promise<{ tokenRecord: string; merkleProofs: string }> {
   let records = await fetchUsdcxTokenRecords(requestRecords, excludedPlaintexts);
   let privateTotal = totalUsdcxBalance(records);
@@ -1422,6 +1432,8 @@ export async function prepareUsdcxForTx(
         leftPt,
         rightPt,
         minimumJoinedAmount,
+        1_500_000,
+        onTxSubmitted,
       );
     }
   }
@@ -1437,7 +1449,7 @@ export async function prepareUsdcxForTx(
     if (publicBalance >= requiredAmount) {
       console.log(`[prepareUsdcxForTx] No sufficient private record. Converting from public: ${(Number(requiredAmount) / 1e6).toFixed(2)} USDCx`);
       const newPt = await convertUsdcxToPrivate(
-        walletExecute, requestRecords, address, requiredAmount, 1_500_000,
+        walletExecute, requestRecords, address, requiredAmount, 1_500_000, onTxSubmitted,
       );
       return { tokenRecord: newPt, merkleProofs: EMPTY_MERKLE_PROOFS };
     }

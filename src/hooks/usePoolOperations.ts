@@ -194,16 +194,20 @@ export function usePoolOperations() {
         let nextRecA: string | null = null
         let nextRecB: string | null = null
         let nextMerkleProofs: string | undefined
+        const prepTxIds: string[] = []
+        const rememberPrepTx = (txId: string) => {
+          prepTxIds.push(txId)
+        }
 
         if (config.tokenAIsCredits && config.symbolB === 'USDCx') {
           setStatusMsg('Preparing ALEO record...')
           nextRecA = await prepareCreditsRecordForTx(
-            walletExecute, requestRecords, amountForA, address, (m) => setStatusMsg(m), exclusions?.recordA,
+            walletExecute, requestRecords, amountForA, address, (m) => setStatusMsg(m), exclusions?.recordA, rememberPrepTx,
           )
 
           setStatusMsg('Preparing USDCx record...')
           const usdcxResult = await prepareUsdcxForTx(
-            walletExecute, requestRecords, amountForB, address, exclusions?.recordB,
+            walletExecute, requestRecords, amountForB, address, exclusions?.recordB, rememberPrepTx,
           )
           nextRecB = usdcxResult.tokenRecord
           nextMerkleProofs = usdcxResult.merkleProofs
@@ -225,7 +229,7 @@ export function usePoolOperations() {
 
           setStatusMsg('Preparing USDCx record...')
           const usdcxResult = await prepareUsdcxForTx(
-            walletExecute, requestRecords, amountForB, address, exclusions?.recordB,
+            walletExecute, requestRecords, amountForB, address, exclusions?.recordB, rememberPrepTx,
           )
           nextRecB = usdcxResult.tokenRecord
           nextMerkleProofs = usdcxResult.merkleProofs
@@ -239,7 +243,18 @@ export function usePoolOperations() {
           nextRecB = await prepareRegistryTokenForTx(walletExecute, requestRecords, regB, amountForB, address)
         }
 
-        return { usedRecA: nextRecA, usedRecB: nextRecB, merkleProofs: nextMerkleProofs }
+        return { usedRecA: nextRecA, usedRecB: nextRecB, merkleProofs: nextMerkleProofs, prepTxIds }
+      }
+
+      const waitForPrepTransactions = async (prepTxIds: string[]) => {
+        const uniqueTxIds = [...new Set(prepTxIds.filter(Boolean))]
+        for (const prepTxId of uniqueTxIds) {
+          setStatusMsg('Waiting for record preparation to finalize...')
+          const status = await pollTransactionStatus(prepTxId, undefined, 3_000, 180_000, walletTxStatus)
+          if (status === 'rejected') {
+            throw new Error('A record preparation transaction was rejected on-chain.')
+          }
+        }
       }
 
       // Initial fee check (preparatory txs may reduce this)
@@ -256,7 +271,13 @@ export function usePoolOperations() {
       // ── Phase 1: Prepare records (may involve multiple on-chain txs) ────
       // Credits-based pools now accept amount_a explicitly, so the wallet only
       // needs a spendable credits record with balance >= the requested amount.
-      ;({ usedRecA, usedRecB, merkleProofs } = await prepareRecordsForAmounts(amtA, amtB))
+      {
+        const prepared = await prepareRecordsForAmounts(amtA, amtB)
+        usedRecA = prepared.usedRecA
+        usedRecB = prepared.usedRecB
+        merkleProofs = prepared.merkleProofs
+        await waitForPrepTransactions(prepared.prepTxIds)
+      }
 
       // ── Phase 2: Re-fetch reserves & re-compute with BigInt precision ────
       // Reserves may have changed during the lengthy record preparation phase.
@@ -288,7 +309,13 @@ export function usePoolOperations() {
       // record chosen before reserve refresh if Shield Wallet has since merged
       // or replaced it in the background.
       setStatusMsg('Refreshing input records...')
-      ;({ usedRecA, usedRecB, merkleProofs } = await prepareRecordsForAmounts(amtA, amtB))
+      {
+        const prepared = await prepareRecordsForAmounts(amtA, amtB)
+        usedRecA = prepared.usedRecA
+        usedRecB = prepared.usedRecB
+        merkleProofs = prepared.merkleProofs
+        await waitForPrepTransactions(prepared.prepTxIds)
+      }
 
       // Re-check fee after preparatory transactions
       const feeBalance = await getPublicAleoBalance(address)
@@ -354,10 +381,16 @@ export function usePoolOperations() {
         setStatusMsg('Refreshing records after stale-input error...')
         const exclusionA = usedRecA ? new Set([usedRecA]) : undefined
         const exclusionB = usedRecB ? new Set([usedRecB]) : undefined
-        ;({ usedRecA, usedRecB, merkleProofs } = await prepareRecordsForAmounts(amtA, amtB, {
-          recordA: exclusionA,
-          recordB: exclusionB,
-        }))
+        {
+          const prepared = await prepareRecordsForAmounts(amtA, amtB, {
+            recordA: exclusionA,
+            recordB: exclusionB,
+          })
+          usedRecA = prepared.usedRecA
+          usedRecB = prepared.usedRecB
+          merkleProofs = prepared.merkleProofs
+          await waitForPrepTransactions(prepared.prepTxIds)
+        }
         inputs = buildInputs()
         setStatusMsg('Retrying on-chain execution...')
         id = await executeOnChain(walletExecute, config.program, config.addLiquidity, inputs, 1_500_000, false, recordIndices)
