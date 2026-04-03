@@ -252,7 +252,11 @@ npm run build            # Production build (tsc + vite)
 npm run preview          # Preview production build
 npm run lint             # ESLint
 npm run contracts:active # Print active program IDs
+npm run darkpool:autosettle:once -- --check-only
+npm run darkpool:autosettle
 ```
+
+Auto-settle keeper docs: `docs/darkpool-autosettle.md`
 
 ## Wallet Support
 

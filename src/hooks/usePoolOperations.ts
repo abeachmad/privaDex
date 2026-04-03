@@ -22,6 +22,8 @@ import {
   buildPureTokenPairAddLiqInputs,
 } from '../lib/programs'
 import { addTradeEntry } from '../lib/tradeHistory'
+import { recordLpDeposit } from '../lib/lpTracker'
+import { getCachedPrice } from '../lib/prices'
 import type { TxStatus } from '../lib/aleo'
 
 // Slippage buffer for LP shares: request 2% fewer shares than calculated.
@@ -418,6 +420,16 @@ export function usePoolOperations() {
           `${(Number(amtB) / 10 ** decimals).toFixed(decimals).replace(/\.?0+$/, '')} ${config.symbolB}`,
         amountOut: 'LP shares', txId: id, venue: 'AMM',
       })
+
+      // Record deposit value for fee tracking
+      const depA = Number(amtA) / 10 ** decimals
+      const depB = Number(amtB) / 10 ** decimals
+      const priceA = getCachedPrice(config.symbolA)
+      const priceB = getCachedPrice(config.symbolB)
+      const depositUsd = depA * priceA + depB * priceB
+      const poolStringId = `${config.symbolA.toLowerCase()}-${config.symbolB.toLowerCase()}`
+        .replace('usdcx', 'usdcx').replace('btcx', 'btcx').replace('ethx', 'ethx')
+      recordLpDeposit(address, poolStringId, depositUsd, depA, depB, expectedShares)
 
       window.dispatchEvent(new Event('privadex:txEnd'))
       window.dispatchEvent(new Event('privadex:balanceRefresh'))

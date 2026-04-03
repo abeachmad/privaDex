@@ -9,7 +9,7 @@ import {
   resolveOnChainTransactionId, fetchTransactionBody,
   prepareCreditsRecordForTx, prepareExactCreditsRecord, prepareUsdcxForTx, prepareRegistryTokenForTx,
   fetchRecordsForTx, getRecordCredits, getPublicAleoBalance, fetchPoolReservesStrict, cpmmOutputWithFee,
-  registryTokenIdForSymbol,
+  registryTokenIdForSymbol, fetchDarkPoolInitializationState, extractWalletTransactionError,
 } from '../lib/aleo'
 import { isRecordManuallySpent, markRecordSpent } from '../lib/spentRecords'
 import {
@@ -37,10 +37,31 @@ export type ProofStatus = 'idle' | 'preparing' | 'proving' | 'verified'
 
 const TESTNET_HEIGHT_URL = 'https://api.explorer.provable.com/v1/testnet/latest/height'
 const DARKPOOL_EPOCH_DURATION = 120
-const DARKPOOL_MIN_BLOCKS_LEFT = 30
+const DARKPOOL_MIN_BLOCKS_LEFT = 45
 
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function isLikelyStaleInputError(message: string): boolean {
+  const lower = message.toLowerCase()
+  return (
+    lower.includes('already exists in the ledger') ||
+    lower.includes('input id') ||
+    lower.includes('spent')
+  )
+}
+
+function isLikelyWalletTransportError(message?: string | null): boolean {
+  const lower = String(message || '').toLowerCase()
+  return (
+    lower.includes('network error') ||
+    lower.includes('failed to fetch') ||
+    lower.includes('load failed') ||
+    lower.includes('imported program') ||
+    lower.includes('program-fetch') ||
+    lower.includes('could not create transaction')
+  )
 }
 
 async function fetchLatestTestnetHeight(): Promise<number> {
@@ -73,7 +94,7 @@ async function waitForPreparationTransactions(
 async function waitForSafeDarkPoolEpochWindow(
   onStatus?: (msg: string | null) => void,
   minBlocksLeft = DARKPOOL_MIN_BLOCKS_LEFT,
-  maxWaitMs = 45_000,
+  maxWaitMs = 180_000,
 ): Promise<{ height: number; epochId: number; blocksLeft: number }> {
   const start = Date.now()
 
@@ -102,10 +123,27 @@ async function buildSwapRejectionMessage(
   venue: Venue,
   walletTransactionStatus?: (txId: string) => Promise<any>,
 ): Promise<string> {
+  const walletStatus = walletTransactionStatus ? await walletTransactionStatus(txId).catch(() => null) : null
   const resolvedTxId = await resolveOnChainTransactionId(txId, walletTransactionStatus)
   const body = resolvedTxId ? await fetchTransactionBody(resolvedTxId) : null
   const lowerBody = body?.toLowerCase() ?? ''
   const txSuffix = resolvedTxId ? ` TX: ${resolvedTxId}` : ''
+  const walletError = extractWalletTransactionError(walletStatus)
+
+  if (!resolvedTxId) {
+    if (venue === 'darkpool') {
+      const detailSuffix = walletError ? ` Wallet detail: ${walletError}` : ''
+      return `Dark Pool submission ${pairLabel} was rejected before the wallet exposed a real on-chain tx id. This is usually a Shield Wallet / proving / program-fetch failure, not a finalized on-chain reject. Reconnect the wallet, refresh records, and retry in a fresh epoch window.${detailSuffix}`
+    }
+
+    if (venue === 'orderbook') {
+      const detailSuffix = walletError ? ` Wallet detail: ${walletError}` : ''
+      return `Order Book submission ${pairLabel} was rejected before the wallet exposed a real on-chain tx id. This usually points to a wallet-side proving or program-fetch failure. Reconnect the wallet and retry.${detailSuffix}`
+    }
+
+    const detailSuffix = walletError ? ` Wallet detail: ${walletError}` : ''
+    return `Swap ${pairLabel} was rejected before the wallet exposed a real on-chain tx id. This usually points to a wallet-side proving, import fetch, or signing failure. Reconnect the wallet and retry.${detailSuffix}`
+  }
 
   if (lowerBody.includes('input id') || lowerBody.includes('already exists in the ledger') || lowerBody.includes('spent')) {
     return `Swap rejected on-chain because one of the input records was already spent.${txSuffix}`
@@ -122,6 +160,11 @@ async function buildSwapRejectionMessage(
   }
 
   if (venue === 'darkpool') {
+    const darkPoolInit = await fetchDarkPoolInitializationState()
+    if (darkPoolInit.reachable && !darkPoolInit.initialized) {
+      return `Dark Pool contract ${PROGRAMS.DARKPOOL} is not initialized on-chain yet. Ask an admin to run initialize(admin) before submitting intents.${txSuffix}`
+    }
+
     if (
       lowerBody.includes('epoch_id') ||
       lowerBody.includes('current_epoch') ||
@@ -270,7 +313,16 @@ async function chooseAtomicRouterPlan(
 }
 
 export function useSwapExecute() {
-  const { connected, address, executeTransaction: walletExecute, requestRecords, refreshBalances, transactionStatus: walletTxStatus } = useWallet()
+  const {
+    connected,
+    address,
+    walletName,
+    executeTransaction: walletExecute,
+    requestRecords,
+    refreshBalances,
+    transactionStatus: walletTxStatus,
+    ensureShieldPrograms,
+  } = useWallet()
   const [proofStatus, setProofStatus] = useState<ProofStatus>('idle')
   const [txStatus, setTxStatus] = useState<TxStatus | null>(null)
   const [txId, setTxId] = useState<string | null>(null)
@@ -328,6 +380,47 @@ export function useSwapExecute() {
         )
         await waitForPreparationTransactions(prepTxIds, walletTxStatus, setStatusMsg)
         return prepared
+      }
+
+      const maybeRetryWalletSideFailure = async (
+        failedTxId: string,
+        scope: 'darkpool' | 'orderbook',
+        rebuildSubmission: (reason: 'transport' | 'stale') => Promise<void>,
+      ): Promise<string | null> => {
+        if (walletName !== 'Shield Wallet') return null
+
+        const walletStatus = walletTxStatus ? await walletTxStatus(failedTxId).catch(() => null) : null
+        const resolvedTxId = await resolveOnChainTransactionId(failedTxId, walletTxStatus)
+        const walletError = extractWalletTransactionError(walletStatus)
+        const isTransportFailure = !resolvedTxId && isLikelyWalletTransportError(walletError)
+        const isStaleFailure = !resolvedTxId && isLikelyStaleInputError(walletError || '')
+
+        if (!isTransportFailure && !isStaleFailure) {
+          return null
+        }
+
+        setStatusMsg(isStaleFailure
+          ? 'Refreshing records after stale wallet rejection...'
+          : 'Refreshing Shield Wallet session and retrying...')
+        setProofStatus('preparing')
+
+        if (isTransportFailure) {
+          try {
+            await ensureShieldPrograms(scope)
+          } catch (refreshErr) {
+            console.warn('[SwapExecute] Shield program refresh failed before retry', refreshErr)
+            return null
+          }
+        }
+
+        await rebuildSubmission(isStaleFailure ? 'stale' : 'transport')
+        setStatusMsg(null)
+        setProofStatus('proving')
+
+        const retriedTxId = await executeOnChain(walletExecute, program, fnName, inputs, txFee, false, recordIndices)
+        setTxId(retriedTxId)
+        submittedTxId = retriedTxId
+        return retriedTxId
       }
 
       const prepareRegistryTokenInput = async (
@@ -470,10 +563,7 @@ export function useSwapExecute() {
           id = await executeOnChain(walletExecute, program, fnName, inputs, txFee, false, recordIndices)
         } catch (execErr: any) {
           const execMsg = execErr?.message ?? 'Swap failed.'
-          const isStaleInput =
-            execMsg.includes('already exists in the ledger') ||
-            execMsg.includes('input ID') ||
-            execMsg.includes('spent')
+          const isStaleInput = isLikelyStaleInputError(execMsg)
 
           if (!isStaleInput) throw execErr
 
@@ -502,16 +592,33 @@ export function useSwapExecute() {
         if (poolId !== POOL_IDS.ALEO_USDCX) {
           throw new Error('Dark Pool only supports ALEO/USDCx pair. Use AMM for this trade.')
         }
+        setStatusMsg('Checking dark pool readiness...')
+        const darkPoolInit = await fetchDarkPoolInitializationState()
+        if (darkPoolInit.reachable && !darkPoolInit.initialized) {
+          throw new Error(`Dark Pool contract ${PROGRAMS.DARKPOOL} is not initialized on-chain yet. Ask an admin to run initialize(admin) before submitting intents.`)
+        }
         program = PROGRAMS.DARKPOOL
-        const buildDarkPoolSubmission = async (excludedUsdcx?: Set<string>) => {
+        const buildDarkPoolSubmission = async (exclusions?: { credits?: Set<string>; usdcx?: Set<string> }) => {
           const nonce = randomNonce()
 
           if (isAtoB) {
             // SELL ALEO → USDCx
             setStatusMsg('Preparing ALEO record...')
-            await prepareExactCreditsRecord(walletExecute, requestRecords, address, amountInBig, (msg) => setStatusMsg(msg))
+            await prepareExactCreditsRecord(
+              walletExecute,
+              requestRecords,
+              address,
+              amountInBig,
+              (msg) => setStatusMsg(msg),
+              exclusions?.credits,
+            )
             const freshCreds = await fetchRecordsForTx(requestRecords, 'credits.aleo')
-            const exactCred = freshCreds.filter((r: any) => !r.spent && !isRecordManuallySpent(r)).find((r: any) => getRecordCredits(r) === amountInBig)
+            const exactCred = freshCreds
+              .filter((r: any) => !r.spent && !isRecordManuallySpent(r))
+              .find((r: any) => {
+                const plaintext = r.recordPlaintext || r.plaintext
+                return !exclusions?.credits?.has(plaintext) && getRecordCredits(r) === amountInBig
+              })
             if (!exactCred) throw new Error('Credits record not found.')
             usedRecord = exactCred.recordPlaintext || exactCred.plaintext
             setStatusMsg('Checking dark pool epoch...')
@@ -524,7 +631,7 @@ export function useSwapExecute() {
 
           // BUY ALEO ← USDCx
           setStatusMsg('Preparing USDCx record...')
-          const { tokenRecord: usdcxRec, merkleProofs } = await prepareUsdcxInput(amountInBig, excludedUsdcx)
+          const { tokenRecord: usdcxRec, merkleProofs } = await prepareUsdcxInput(amountInBig, exclusions?.usdcx)
           usedRecord = usdcxRec
           setStatusMsg('Checking dark pool epoch...')
           const { epochId } = await waitForSafeDarkPoolEpochWindow(setStatusMsg)
@@ -537,37 +644,70 @@ export function useSwapExecute() {
 
         setStatusMsg(null)
         setProofStatus('proving')
+        if (walletName === 'Shield Wallet') {
+          await ensureShieldPrograms('darkpool').catch((refreshErr) => {
+            console.warn('[SwapExecute] Pre-submit Shield refresh skipped for dark pool', refreshErr)
+          })
+        }
         let id: string
         try {
           id = await executeOnChain(walletExecute, program, fnName, inputs, txFee, false, recordIndices)
         } catch (execErr: any) {
           const execMsg = execErr?.message ?? 'Dark Pool submission failed.'
-          const isStaleInput =
-            execMsg.includes('already exists in the ledger') ||
-            execMsg.includes('input ID') ||
-            execMsg.includes('spent')
+          const isStaleInput = isLikelyStaleInputError(execMsg)
 
           if (!isStaleInput) throw execErr
 
           console.warn('[SwapExecute] Dark Pool stale input detected, retrying with refreshed records', execMsg)
+          if (usedRecord) markRecordSpent(usedRecord)
           setStatusMsg('Refreshing records after stale-input error...')
-          await buildDarkPoolSubmission(!isAtoB && usedRecord ? new Set([usedRecord]) : undefined)
+          await buildDarkPoolSubmission(
+            isAtoB
+              ? { credits: usedRecord ? new Set([usedRecord]) : undefined }
+              : { usdcx: usedRecord ? new Set([usedRecord]) : undefined }
+          )
           setStatusMsg(null)
           setProofStatus('proving')
+          if (walletName === 'Shield Wallet') {
+            await ensureShieldPrograms('darkpool').catch((refreshErr) => {
+              console.warn('[SwapExecute] Shield refresh skipped during stale-input retry', refreshErr)
+            })
+          }
           id = await executeOnChain(walletExecute, program, fnName, inputs, txFee, false, recordIndices)
         }
-        if (usedRecord) markRecordSpent(usedRecord)
         submittedTxId = id
         setTxId(id)
         setProofStatus('verified')
         setTxStatus('pending')
-        const finalStatus = await pollTransactionStatus(id, setTxStatus, 3_000, 180_000, walletTxStatus)
+        let finalStatus = await pollTransactionStatus(id, setTxStatus, 3_000, 180_000, walletTxStatus)
+        if (finalStatus === 'rejected') {
+          const lastUsedRecord = usedRecord
+          const retriedTxId = await maybeRetryWalletSideFailure(id, 'darkpool', async (reason) => {
+            if (reason === 'stale' && lastUsedRecord) {
+              markRecordSpent(lastUsedRecord)
+            }
+            await buildDarkPoolSubmission(
+              reason === 'stale'
+                ? (
+                  isAtoB
+                    ? { credits: lastUsedRecord ? new Set([lastUsedRecord]) : undefined }
+                    : { usdcx: lastUsedRecord ? new Set([lastUsedRecord]) : undefined }
+                )
+                : undefined
+            )
+          })
+          if (retriedTxId) {
+            id = retriedTxId
+            finalStatus = await pollTransactionStatus(id, setTxStatus, 3_000, 180_000, walletTxStatus)
+          }
+        }
         if (finalStatus === 'rejected') {
           setError(await buildSwapRejectionMessage(id, `${fromToken}/${toToken}`, venue, walletTxStatus))
           setProofStatus('idle')
           window.dispatchEvent(new Event('privadex:txEnd'))
           return false
         }
+        if (usedRecord) markRecordSpent(usedRecord)
 
       } else if (venue === 'orderbook') {
         // ─── Order Book (ALEO/USDCx only) ───
@@ -575,7 +715,7 @@ export function useSwapExecute() {
           throw new Error('Order Book only supports ALEO/USDCx pair. Use AMM for this trade.')
         }
         program = PROGRAMS.ORDERBOOK
-        const buildOrderBookSubmission = async (excludedUsdcx?: Set<string>) => {
+        const buildOrderBookSubmission = async (exclusions?: { credits?: Set<string>; usdcx?: Set<string> }) => {
           const height = await fetchLatestTestnetHeight()
           const nonce = randomNonce()
           const expiryBl = expiryInEpochs(height, 2) // 2 epochs ≈ 4min
@@ -583,9 +723,21 @@ export function useSwapExecute() {
 
           if (isAtoB) {
             setStatusMsg('Preparing ALEO record...')
-            await prepareExactCreditsRecord(walletExecute, requestRecords, address, amountInBig, (msg) => setStatusMsg(msg))
+            await prepareExactCreditsRecord(
+              walletExecute,
+              requestRecords,
+              address,
+              amountInBig,
+              (msg) => setStatusMsg(msg),
+              exclusions?.credits,
+            )
             const freshCreds = await fetchRecordsForTx(requestRecords, 'credits.aleo')
-            const exactCred = freshCreds.filter((r: any) => !r.spent && !isRecordManuallySpent(r)).find((r: any) => getRecordCredits(r) === amountInBig)
+            const exactCred = freshCreds
+              .filter((r: any) => !r.spent && !isRecordManuallySpent(r))
+              .find((r: any) => {
+                const plaintext = r.recordPlaintext || r.plaintext
+                return !exclusions?.credits?.has(plaintext) && getRecordCredits(r) === amountInBig
+              })
             if (!exactCred) throw new Error('Credits record not found.')
             usedRecord = exactCred.recordPlaintext || exactCred.plaintext
             inputs = buildSellLimitInputs(usedRecord!, poolId, limitPrice, expiryBl, nonce)
@@ -595,7 +747,7 @@ export function useSwapExecute() {
           }
 
           setStatusMsg('Preparing USDCx record...')
-          const { tokenRecord: usdcxRec, merkleProofs } = await prepareUsdcxInput(amountInBig, excludedUsdcx)
+          const { tokenRecord: usdcxRec, merkleProofs } = await prepareUsdcxInput(amountInBig, exclusions?.usdcx)
           usedRecord = usdcxRec
           inputs = buildBuyLimitInputs(usdcxRec, merkleProofs, poolId, amountInBig, limitPrice, expiryBl, nonce)
           fnName = ORDERBOOK_FNS.PLACE_BUY_LIMIT
@@ -606,37 +758,70 @@ export function useSwapExecute() {
 
         setStatusMsg(null)
         setProofStatus('proving')
+        if (walletName === 'Shield Wallet') {
+          await ensureShieldPrograms('orderbook').catch((refreshErr) => {
+            console.warn('[SwapExecute] Pre-submit Shield refresh skipped for order book', refreshErr)
+          })
+        }
         let id: string
         try {
           id = await executeOnChain(walletExecute, program, fnName, inputs, txFee, false, recordIndices)
         } catch (execErr: any) {
           const execMsg = execErr?.message ?? 'Order Book submission failed.'
-          const isStaleInput =
-            execMsg.includes('already exists in the ledger') ||
-            execMsg.includes('input ID') ||
-            execMsg.includes('spent')
+          const isStaleInput = isLikelyStaleInputError(execMsg)
 
           if (!isStaleInput) throw execErr
 
           console.warn('[SwapExecute] Order Book stale input detected, retrying with refreshed records', execMsg)
+          if (usedRecord) markRecordSpent(usedRecord)
           setStatusMsg('Refreshing records after stale-input error...')
-          await buildOrderBookSubmission(!isAtoB && usedRecord ? new Set([usedRecord]) : undefined)
+          await buildOrderBookSubmission(
+            isAtoB
+              ? { credits: usedRecord ? new Set([usedRecord]) : undefined }
+              : { usdcx: usedRecord ? new Set([usedRecord]) : undefined }
+          )
           setStatusMsg(null)
           setProofStatus('proving')
+          if (walletName === 'Shield Wallet') {
+            await ensureShieldPrograms('orderbook').catch((refreshErr) => {
+              console.warn('[SwapExecute] Shield refresh skipped during stale-input retry', refreshErr)
+            })
+          }
           id = await executeOnChain(walletExecute, program, fnName, inputs, txFee, false, recordIndices)
         }
-        if (usedRecord) markRecordSpent(usedRecord)
         submittedTxId = id
         setTxId(id)
         setProofStatus('verified')
         setTxStatus('pending')
-        const finalStatus = await pollTransactionStatus(id, setTxStatus, 3_000, 180_000, walletTxStatus)
+        let finalStatus = await pollTransactionStatus(id, setTxStatus, 3_000, 180_000, walletTxStatus)
+        if (finalStatus === 'rejected') {
+          const lastUsedRecord = usedRecord
+          const retriedTxId = await maybeRetryWalletSideFailure(id, 'orderbook', async (reason) => {
+            if (reason === 'stale' && lastUsedRecord) {
+              markRecordSpent(lastUsedRecord)
+            }
+            await buildOrderBookSubmission(
+              reason === 'stale'
+                ? (
+                  isAtoB
+                    ? { credits: lastUsedRecord ? new Set([lastUsedRecord]) : undefined }
+                    : { usdcx: lastUsedRecord ? new Set([lastUsedRecord]) : undefined }
+                )
+                : undefined
+            )
+          })
+          if (retriedTxId) {
+            id = retriedTxId
+            finalStatus = await pollTransactionStatus(id, setTxStatus, 3_000, 180_000, walletTxStatus)
+          }
+        }
         if (finalStatus === 'rejected') {
           setError(await buildSwapRejectionMessage(id, `${fromToken}/${toToken}`, venue, walletTxStatus))
           setProofStatus('idle')
           window.dispatchEvent(new Event('privadex:txEnd'))
           return false
         }
+        if (usedRecord) markRecordSpent(usedRecord)
       }
 
       setProofStatus('idle')
@@ -661,7 +846,7 @@ export function useSwapExecute() {
       return true
     } catch (err: any) {
       let msg = err?.message ?? 'Transaction failed.'
-      if (msg.includes('already exists in the ledger') || msg.includes('input ID')) {
+      if (isLikelyStaleInputError(msg)) {
         msg = 'Record already spent on-chain. Disconnect and reconnect wallet.'
       }
       setError(msg)
@@ -669,7 +854,7 @@ export function useSwapExecute() {
       window.dispatchEvent(new Event('privadex:txEnd'))
       return false
     }
-  }, [connected, address, walletExecute, requestRecords, refreshBalances, reset, walletTxStatus])
+  }, [connected, address, walletName, walletExecute, requestRecords, refreshBalances, reset, walletTxStatus, ensureShieldPrograms])
 
   return {
     proofStatus,

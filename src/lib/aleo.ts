@@ -2,7 +2,7 @@
 // Aleo on-chain interaction helpers using Shield Wallet SDK
 import { markRecordSpent, isRecordManuallySpent } from "./spentRecords";
 import { getCachedRecords } from "./recordCache";
-import { PROGRAMS, REGISTRY_TOKEN_IDS, USDCX_FNS, EMPTY_MERKLE_PROOFS } from "./programs";
+import { PROGRAMS, REGISTRY_TOKEN_IDS, USDCX_FNS, EMPTY_MERKLE_PROOFS, POOL_IDS } from "./programs";
 import { isScannerReady, fetchRecordsFromScanner } from "./recordScanner";
 
 // ─── Config (from env) ───────────────────────────────────────────────────────
@@ -110,7 +110,14 @@ export async function executeOnChain(
       return result.transactionId;
     } catch (e: any) {
       const rawMessage = e?.message || e?.toString() || "Wallet rejected the transaction";
-      const isNetworkError = rawMessage.includes("Failed to fetch") || rawMessage.includes("Error finding");
+      const lowerMessage = String(rawMessage).toLowerCase();
+      const isNetworkError = (
+        lowerMessage.includes("failed to fetch") ||
+        lowerMessage.includes("error finding") ||
+        lowerMessage.includes("network error") ||
+        lowerMessage.includes("load failed") ||
+        lowerMessage.includes("imported program")
+      );
 
       if (isNetworkError && attempt < MAX_RETRIES - 1) {
         const delay = (attempt + 1) * 3_000; // 3s, 6s
@@ -175,6 +182,39 @@ function extractWalletTransactionId(result: any): string | null {
   ];
 
   return candidates.find((candidate): candidate is string => typeof candidate === "string" && candidate.length > 0) ?? null;
+}
+
+export function extractWalletTransactionError(result: any): string | null {
+  const directCandidates = [
+    result?.error,
+    result?.reason,
+    result?.message,
+    result?.details,
+    result?.status_message,
+    result?.data?.error,
+    result?.data?.reason,
+    result?.data?.message,
+    result?.transaction?.error,
+    result?.transaction?.reason,
+    result?.transaction?.message,
+  ];
+
+  for (const candidate of directCandidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+
+  try {
+    const serialized = JSON.stringify(result);
+    if (serialized && serialized !== "{}") {
+      return serialized;
+    }
+  } catch {
+    // ignore JSON serialization failure
+  }
+
+  return null;
 }
 
 async function pollOnChainTransactionStatus(
@@ -428,18 +468,48 @@ export interface EpochState {
   sellVolume: bigint;
   closed:     boolean;
   midPrice:   bigint;
+  feeBps:     number;
+  matchedBuy: bigint;
+  matchedSell: bigint;
   intentCount: number;
 }
 
-export async function fetchEpochState(epochId: number): Promise<EpochState> {
-  const program = import.meta.env.VITE_PROGRAM_DARKPOOL || "privadex_darkpool_v3.aleo";
-  const key     = `${epochId}u64`;
+export interface DarkPoolInitializationState {
+  initialized: boolean;
+  reachable: boolean;
+}
 
-  const [bv, sv, cl, mp, ic] = await Promise.all([
+const DARKPOOL_EPOCH_KEY_MULTIPLIER = 18446744073709551616n;
+
+function darkPoolEpochKey(epochId: number, poolId: number): string {
+  return `${BigInt(epochId) * DARKPOOL_EPOCH_KEY_MULTIPLIER + BigInt(poolId)}u128`;
+}
+
+export async function fetchDarkPoolInitializationState(): Promise<DarkPoolInitializationState> {
+  const program = import.meta.env.VITE_PROGRAM_DARKPOOL || "privadex_darkpool_v4.aleo";
+  const { value, reachable } = await getMappingValueDetailed(program, "initialized", "true");
+
+  return {
+    initialized: value === "true",
+    reachable,
+  };
+}
+
+export async function fetchEpochState(
+  epochId: number,
+  poolId: number = POOL_IDS.ALEO_USDCX,
+): Promise<EpochState> {
+  const program = import.meta.env.VITE_PROGRAM_DARKPOOL || "privadex_darkpool_v4.aleo";
+  const key     = darkPoolEpochKey(epochId, poolId);
+
+  const [bv, sv, cl, mp, fb, mb, ms, ic] = await Promise.all([
     getMappingValue(program, "epoch_buy_volume",  key),
     getMappingValue(program, "epoch_sell_volume", key),
     getMappingValue(program, "epoch_closed",      key),
     getMappingValue(program, "epoch_mid_price",   key),
+    getMappingValue(program, "epoch_fee_bps",     key),
+    getMappingValue(program, "epoch_matched_buy_volume", key),
+    getMappingValue(program, "epoch_matched_sell_volume", key),
     getMappingValue(program, "intent_count",      key),
   ]);
 
@@ -448,7 +518,53 @@ export async function fetchEpochState(epochId: number): Promise<EpochState> {
     sellVolume:  parseLeoInt(sv ?? "0u128"),
     closed:      cl === "true",
     midPrice:    parseLeoInt(mp ?? "0u128"),
+    feeBps:      Number(parseLeoInt(fb ?? "0u64")),
+    matchedBuy:  parseLeoInt(mb ?? "0u128"),
+    matchedSell: parseLeoInt(ms ?? "0u128"),
     intentCount: Number(parseLeoInt(ic ?? "0u64")),
+  };
+}
+
+export interface DarkPoolSettlementPreview {
+  matchedInput: bigint;
+  refundInput: bigint;
+  amountOut: bigint;
+  feePaid: bigint;
+}
+
+export function estimateDarkPoolBuyClaim(epoch: EpochState, amount: bigint): DarkPoolSettlementPreview {
+  const matchedInput = epoch.buyVolume === 0n
+    ? 0n
+    : (amount * epoch.matchedBuy) / epoch.buyVolume;
+  const refundInput = amount - matchedInput;
+  const grossBaseOut = epoch.buyVolume === 0n
+    ? 0n
+    : (amount * epoch.matchedSell) / epoch.buyVolume;
+  const feePaid = (grossBaseOut * BigInt(epoch.feeBps)) / 10_000n;
+
+  return {
+    matchedInput,
+    refundInput,
+    amountOut: grossBaseOut - feePaid,
+    feePaid,
+  };
+}
+
+export function estimateDarkPoolSellClaim(epoch: EpochState, amount: bigint): DarkPoolSettlementPreview {
+  const matchedInput = epoch.sellVolume === 0n
+    ? 0n
+    : (amount * epoch.matchedSell) / epoch.sellVolume;
+  const refundInput = amount - matchedInput;
+  const grossQuoteOut = epoch.sellVolume === 0n
+    ? 0n
+    : (amount * epoch.matchedBuy) / epoch.sellVolume;
+  const feePaid = (grossQuoteOut * BigInt(epoch.feeBps)) / 10_000n;
+
+  return {
+    matchedInput,
+    refundInput,
+    amountOut: grossQuoteOut - feePaid,
+    feePaid,
   };
 }
 
@@ -1005,13 +1121,14 @@ export async function prepareExactCreditsRecord(
   address: string,
   targetAmount: bigint,
   onStatus?: (msg: string) => void,
+  excludedPlaintexts?: Set<string>,
 ): Promise<string> {
   const FEE = 1_500_000; // 1.5 ALEO
   const feeBig = BigInt(FEE);
 
   // 1. Check for exact match — no extra tx needed if it's the only record
   const records = await fetchRecordsForTx(requestRecords, "credits.aleo");
-  const nonZero = getSpendableCreditsRecords(records);
+  const nonZero = getSpendableCreditsRecords(records, excludedPlaintexts);
 
   const exactRec = nonZero.find((r: any) => getRecordCredits(r) === targetAmount);
 
@@ -1055,7 +1172,7 @@ export async function prepareExactCreditsRecord(
     // Re-verify the exact record still exists (auto-join might have already merged it)
     const freshRecords = await fetchRecordsForTx(requestRecords, "credits.aleo");
     const freshExact = freshRecords
-      .filter((r: any) => !r.spent && !isRecordManuallySpent(r))
+      .filter((r: any) => !r.spent && !isRecordManuallySpent(r) && !isExcludedRecord(r, excludedPlaintexts))
       .find((r: any) => getRecordCredits(r) === targetAmount);
     if (freshExact) {
       console.log(`[prepareExactCredits] Exact record still valid after drain — using directly`);
@@ -1076,7 +1193,7 @@ export async function prepareExactCreditsRecord(
       walletExecute, "credits.aleo", "transfer_public_to_private",
       [address, `${targetAmount}u64`], FEE, false,
     );
-    return await pollForExactCreditsRecord(requestRecords, targetAmount);
+    return await pollForExactCreditsRecord(requestRecords, targetAmount, excludedPlaintexts);
   }
 
   // 3. No exact record, private records exist → drain ALL to public first.
@@ -1144,7 +1261,7 @@ export async function prepareExactCreditsRecord(
     [address, `${targetAmount}u64`], FEE, false,
   );
 
-  return await pollForExactCreditsRecord(requestRecords, targetAmount);
+  return await pollForExactCreditsRecord(requestRecords, targetAmount, excludedPlaintexts);
 }
 
 /** Read public ALEO balance from on-chain mapping */
@@ -1171,13 +1288,14 @@ export async function getPublicAleoBalance(address: string): Promise<bigint> {
 async function pollForExactCreditsRecord(
   requestRecords: any,
   targetAmount: bigint,
+  excludedPlaintexts?: Set<string>,
 ): Promise<string> {
   let lastPlaintext: string | null = null;
   await sleep(3_000);
   for (let attempt = 0; attempt < 20; attempt++) {
     const fresh = await fetchRecordsForTx(requestRecords, "credits.aleo");
     const match = fresh
-      .filter((r: any) => !r.spent && !isRecordManuallySpent(r))
+      .filter((r: any) => !r.spent && !isRecordManuallySpent(r) && !isExcludedRecord(r, excludedPlaintexts))
       .find((r: any) => getRecordCredits(r) === targetAmount);
     if (match) {
       const pt = match.recordPlaintext || match.plaintext;

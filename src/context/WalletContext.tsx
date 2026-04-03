@@ -12,16 +12,31 @@ import { setCachedRecords } from '../lib/recordCache'
 import { isScannerConfigured, registerViewKey, resetScanner } from '../lib/recordScanner'
 
 // ─── Programs to register with Shield Wallet ─────────────────────────────────
-const REGISTERED_PROGRAMS = Array.from(new Set([
+const SHIELDED_USDCX_PROGRAMS = Array.from(new Set([
   'credits.aleo',
   'merkle_tree.aleo',
   'test_usdcx_multisig_core.aleo',
   'test_usdcx_freezelist.aleo',
+  PROGRAM_IDS.USDCX,
+]))
+
+const DARKPOOL_REQUIRED_PROGRAMS = Array.from(new Set([
+  ...SHIELDED_USDCX_PROGRAMS,
+  // Dark pool v4 still imports privadex_amm_v8.aleo during execution/settlement.
+  'privadex_amm_v8.aleo',
+  PROGRAM_IDS.DARKPOOL,
+]))
+
+const ORDERBOOK_REQUIRED_PROGRAMS = Array.from(new Set([
+  ...SHIELDED_USDCX_PROGRAMS,
+  PROGRAM_IDS.ORDERBOOK,
+]))
+
+const REGISTERED_PROGRAMS = Array.from(new Set([
+  ...DARKPOOL_REQUIRED_PROGRAMS,
+  ...ORDERBOOK_REQUIRED_PROGRAMS,
   PROGRAM_IDS.TOKEN,
   PROGRAM_IDS.AMM,
-  PROGRAM_IDS.USDCX,
-  PROGRAM_IDS.DARKPOOL,
-  PROGRAM_IDS.ORDERBOOK,
   PROGRAM_IDS.TOKEN_REGISTRY,
   PROGRAM_IDS.AMM_BTCX,
   PROGRAM_IDS.AMM_ETHX,
@@ -55,6 +70,7 @@ interface WalletState {
   wallets: any[]
   selectWallet: any
   connectWallet: (walletName: string) => Promise<void>
+  ensureShieldPrograms: (scope?: 'all' | 'darkpool' | 'orderbook') => Promise<void>
 }
 
 const WalletCtx = createContext<WalletState | null>(null)
@@ -115,6 +131,27 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
       throw e
     }
   }, [selectWallet, aleoConnect])
+
+  const ensureShieldPrograms = useCallback(async (scope: 'all' | 'darkpool' | 'orderbook' = 'all') => {
+    if (!connected || walletName !== 'Shield Wallet') return
+
+    const shield = (window as any).shield
+    if (!shield?.connect) return
+
+    const programs = scope === 'darkpool'
+      ? DARKPOOL_REQUIRED_PROGRAMS
+      : scope === 'orderbook'
+        ? ORDERBOOK_REQUIRED_PROGRAMS
+        : REGISTERED_PROGRAMS
+
+    try {
+      await shield.connect(Network.TESTNET, DecryptPermission.AutoDecrypt, programs)
+      console.log('[Wallet] Refreshed Shield programs', { scope, programCount: programs.length })
+    } catch (e) {
+      console.warn('[Wallet] Shield program refresh failed:', e)
+      throw e
+    }
+  }, [connected, walletName])
 
   const disconnect = useCallback(async () => {
     try {
@@ -280,6 +317,7 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
       wallets: wallets || [],
       selectWallet,
       connectWallet,
+      ensureShieldPrograms,
     }}>
       {children}
     </WalletCtx.Provider>

@@ -1,0 +1,20 @@
+[Unit]
+Description=PrivaDEX dark pool auto-settle keeper
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mdlog
+Group=mdlog
+WorkingDirectory=/media/mdlog/mdlog/Project-MDlabs/frontend-privadex
+Environment=NODE_ENV=production
+EnvironmentFile=/media/mdlog/mdlog/Project-MDlabs/frontend-privadex/ops/systemd/privadex-darkpool-autosettle.env
+ExecStart=/usr/bin/npm run darkpool:autosettle -- --state-file /media/mdlog/mdlog/Project-MDlabs/frontend-privadex/.darkpool/darkpool-autosettle-state.json
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

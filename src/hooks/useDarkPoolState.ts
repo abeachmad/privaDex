@@ -2,13 +2,14 @@
  * useDarkPoolState — Fetches real dark pool epoch state from on-chain.
  */
 import { useState, useEffect, useCallback } from 'react'
-import { fetchEpochState, type EpochState } from '../lib/aleo'
+import { fetchDarkPoolInitializationState, fetchEpochState, type EpochState } from '../lib/aleo'
 
 export interface DarkPoolState {
   blockHeight: number
   currentEpoch: number
   secondsUntilNext: number
   epochState: EpochState | null
+  initialized: boolean | null
   loading: boolean
 }
 
@@ -18,6 +19,7 @@ export function useDarkPoolState() {
     currentEpoch: 0,
     secondsUntilNext: 300,
     epochState: null,
+    initialized: null,
     loading: true,
   })
 
@@ -33,16 +35,20 @@ export function useDarkPoolState() {
       // Aleo testnet: ~1 block per ~3-4 seconds
       const secondsLeft = Math.max(1, Math.ceil(blocksLeft * 3.5))
 
+      const initState = await fetchDarkPoolInitializationState()
       let epochState: EpochState | null = null
-      try {
-        epochState = await fetchEpochState(epochId)
-      } catch { /* no epoch data */ }
+      if (initState.initialized) {
+        try {
+          epochState = await fetchEpochState(epochId)
+        } catch { /* no epoch data */ }
+      }
 
       setState({
         blockHeight: height,
         currentEpoch: epochId,
         secondsUntilNext: secondsLeft,
         epochState,
+        initialized: initState.reachable ? initState.initialized : null,
         loading: false,
       })
     } catch {

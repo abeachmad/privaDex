@@ -8,7 +8,14 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "contracts:active": "node scripts/contracts-active.mjs"
+    "contracts:active": "node scripts/contracts-active.mjs",
+    "darkpool:init": "node scripts/initialize-darkpool.mjs",
+    "darkpool:init:check": "node scripts/initialize-darkpool.mjs --check-only",
+    "darkpool:autosettle": "node scripts/darkpool-autosettle.mjs",
+    "darkpool:autosettle:once": "node scripts/darkpool-autosettle.mjs --once",
+    "darkpool:settle": "node scripts/darkpool-settle-epoch.mjs",
+    "darkpool:claim-buy": "node scripts/darkpool-claim-buy-fill.mjs",
+    "darkpool:cancel-buy": "node scripts/darkpool-cancel-buy-intent.mjs"
   },
   "dependencies": {
     "@provablehq/aleo-wallet-adaptor-react": "^0.3.0-alpha.3",

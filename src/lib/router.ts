@@ -14,6 +14,7 @@
 import {
   fetchPoolReserves,
   fetchEpochState,
+  fetchDarkPoolInitializationState,
   cpmmOutputWithFee,
   priceImpact as calcPriceImpact,
   type PoolReserves,
@@ -266,6 +267,16 @@ async function evaluateDarkPool(
   }
 
   try {
+    const initState = await fetchDarkPoolInitializationState();
+    if (initState.reachable && !initState.initialized) {
+      return {
+        ...base,
+        available: false,
+        amountOut: 0n,
+        reason: "Dark pool contract not initialized on-chain",
+      };
+    }
+
     // Get current block height for epoch calculation
     const heightRes = await fetch(
       "https://api.explorer.provable.com/v1/testnet/latest/height",

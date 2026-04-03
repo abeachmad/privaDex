@@ -13,6 +13,7 @@ import {
 } from '../lib/aleo'
 import { PROGRAMS, POOL_AMM_CONFIG, POOL_IDS } from '../lib/programs'
 import { getCachedPrice, fetchTokenPrices } from '../lib/prices'
+import { calculateFeeEarned } from '../lib/lpTracker'
 import type { LPPosition } from '../data/tokens'
 
 // All unique AMM programs that can hold LP share records
@@ -143,7 +144,7 @@ export function useMyLpPositions() {
               tokenB: config.symbolB,
               sharePercent,
               valueUsd,
-              earnedFees: 0, // fees not trackable from LP record alone
+              earnedFees: address ? calculateFeeEarned(address, stringPoolId, valueUsd) : 0,
               tokenAAmount,
               tokenBAmount,
               shares,

@@ -12,6 +12,8 @@ dist
 dist-ssr
 *.local
 .env
+.darkpool/
+ops/systemd/*.env
 
 # Editor directories and files
 .vscode/*
