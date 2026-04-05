@@ -32,14 +32,27 @@ const ORDERBOOK_REQUIRED_PROGRAMS = Array.from(new Set([
   PROGRAM_IDS.ORDERBOOK,
 ]))
 
-// Only register programs essential for wallet connection.
-// Shield Wallet fetches ALL registered programs on connect — too many causes timeout.
-// Individual programs are fetched on-demand during transaction execution.
+// Register all programs that the wallet may need to execute transactions for.
+// Shield Wallet requires programs to be registered at connect time.
 const REGISTERED_PROGRAMS = Array.from(new Set([
   'credits.aleo',
+  'merkle_tree.aleo',
+  'test_usdcx_multisig_core.aleo',
+  'test_usdcx_freezelist.aleo',
   PROGRAM_IDS.TOKEN_REGISTRY,
   PROGRAM_IDS.USDCX,
+  PROGRAM_IDS.TOKEN,
   PROGRAM_IDS.AMM,
+  PROGRAM_IDS.AMM_BTCX,
+  PROGRAM_IDS.AMM_ETHX,
+  PROGRAM_IDS.AMM_NATIVE_BTCX,
+  PROGRAM_IDS.AMM_NATIVE_ETHX,
+  PROGRAM_IDS.AMM_BTCX_ETHX,
+  PROGRAM_IDS.DARKPOOL,
+  PROGRAM_IDS.DARKPOOL_BTCX,
+  PROGRAM_IDS.DARKPOOL_ETHX,
+  PROGRAM_IDS.DARKPOOL_BTCX_ETHX,
+  PROGRAM_IDS.ORDERBOOK,
 ]))
 
 // ─── Wallet Context ──────────────────────────────────────────────────────────
