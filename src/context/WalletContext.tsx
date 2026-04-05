@@ -22,8 +22,8 @@ const SHIELDED_USDCX_PROGRAMS = Array.from(new Set([
 
 const DARKPOOL_REQUIRED_PROGRAMS = Array.from(new Set([
   ...SHIELDED_USDCX_PROGRAMS,
-  // Dark pool v4 still imports privadex_amm_v8.aleo during execution/settlement.
-  'privadex_amm_v8.aleo',
+  // Dark pool v4 imports the AMM for settlement price verification
+  PROGRAM_IDS.AMM,
   PROGRAM_IDS.DARKPOOL,
 ]))
 
@@ -32,20 +32,14 @@ const ORDERBOOK_REQUIRED_PROGRAMS = Array.from(new Set([
   PROGRAM_IDS.ORDERBOOK,
 ]))
 
+// Only register programs essential for wallet connection.
+// Shield Wallet fetches ALL registered programs on connect — too many causes timeout.
+// Individual programs are fetched on-demand during transaction execution.
 const REGISTERED_PROGRAMS = Array.from(new Set([
-  ...DARKPOOL_REQUIRED_PROGRAMS,
-  ...ORDERBOOK_REQUIRED_PROGRAMS,
-  PROGRAM_IDS.TOKEN,
-  PROGRAM_IDS.AMM,
+  'credits.aleo',
   PROGRAM_IDS.TOKEN_REGISTRY,
-  PROGRAM_IDS.AMM_BTCX,
-  PROGRAM_IDS.AMM_ETHX,
-  PROGRAM_IDS.AMM_NATIVE_BTCX,
-  PROGRAM_IDS.AMM_NATIVE_ETHX,
-  PROGRAM_IDS.AMM_BTCX_ETHX,
-  PROGRAM_IDS.DARKPOOL_BTCX,
-  PROGRAM_IDS.DARKPOOL_ETHX,
-  PROGRAM_IDS.DARKPOOL_BTCX_ETHX,
+  PROGRAM_IDS.USDCX,
+  PROGRAM_IDS.AMM,
 ]))
 
 // ─── Wallet Context ──────────────────────────────────────────────────────────

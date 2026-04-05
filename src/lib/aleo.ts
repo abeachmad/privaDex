@@ -70,7 +70,7 @@ interface RecordFetchOptions {
  * Returns the transaction ID (pending until finalized on-chain).
  *
  * @param walletExecute  - executeTransaction from useWallet()
- * @param program        - e.g. "privadex_amm_v7.aleo"
+ * @param program        - e.g. "privadex_amm_v10.aleo"
  * @param functionName   - e.g. "swap_a_for_b"
  * @param inputs         - Leo-typed string array, e.g. ["<record>", "0u64", "100u128"]
  * @param fee            - fee in microcredits (default 300_000 = 0.3 ALEO)
@@ -395,7 +395,7 @@ export interface PoolMetrics {
 }
 
 export async function fetchPoolReserves(poolId: number, ammProgram?: string): Promise<PoolReserves> {
-  const program = ammProgram || import.meta.env.VITE_PROGRAM_AMM || "privadex_amm_v7.aleo";
+  const program = ammProgram || import.meta.env.VITE_PROGRAM_AMM || "privadex_amm_v10.aleo";
   const key     = `${poolId}u64`;
 
   const [ra, rb, ts, fb] = await Promise.all([
@@ -414,7 +414,7 @@ export async function fetchPoolReserves(poolId: number, ammProgram?: string): Pr
 }
 
 export async function fetchPoolReservesStrict(poolId: number, ammProgram?: string): Promise<PoolReserves> {
-  const program = ammProgram || import.meta.env.VITE_PROGRAM_AMM || "privadex_amm_v7.aleo";
+  const program = ammProgram || import.meta.env.VITE_PROGRAM_AMM || "privadex_amm_v10.aleo";
   const key = `${poolId}u64`;
 
   const [ra, rb, ts, fb] = await Promise.all([
@@ -437,7 +437,7 @@ export async function fetchPoolReservesStrict(poolId: number, ammProgram?: strin
 }
 
 export async function fetchPoolMetrics(poolId: number, ammProgram?: string): Promise<PoolMetrics> {
-  const program = ammProgram || import.meta.env.VITE_PROGRAM_AMM || "privadex_amm_v7.aleo";
+  const program = ammProgram || import.meta.env.VITE_PROGRAM_AMM || "privadex_amm_v10.aleo";
   const key = `${poolId}u64`;
 
   const [va, vb, fa, fb, lb] = await Promise.all([
