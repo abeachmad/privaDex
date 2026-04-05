@@ -36,8 +36,11 @@ const VOLUME_LOG_KEY = 'privadex_volume_log'
 const VERSION_KEY = 'privadex_program_version'
 
 // Clear stale localStorage data when contracts change
-// The AMM program ID serves as a version fingerprint
-const CURRENT_VERSION = POOL_AMM_CONFIG[POOL_IDS.ALEO_USDCX]?.program || ''
+// Version fingerprint includes all AMM programs
+const CURRENT_VERSION = [
+  POOL_AMM_CONFIG[POOL_IDS.ALEO_USDCX]?.program,
+  POOL_AMM_CONFIG[POOL_IDS.BTCX_ETHX]?.program,
+].join('|')
 try {
   const storedVersion = localStorage.getItem(VERSION_KEY)
   if (storedVersion !== CURRENT_VERSION) {
@@ -105,6 +108,10 @@ function detectAndLogVolume(
 
   const deltaA = newResA - prev.reserveA
   const deltaB = newResB - prev.reserveB
+
+  // Ignore noise: require minimum 0.001 change to count as real trade
+  const MIN_DELTA = 0.001
+  if (Math.abs(deltaA) < MIN_DELTA && Math.abs(deltaB) < MIN_DELTA) return
 
   // Swap detection: one reserve goes up, the other goes down
   const isSwap = (deltaA > 0 && deltaB < 0) || (deltaA < 0 && deltaB > 0)

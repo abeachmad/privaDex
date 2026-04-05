@@ -43,6 +43,13 @@ export async function faucetMintPublic(
   onStatus?.('Initializing WASM...')
   await sdk.initializeWasm()
 
+  // Use thread pool to avoid blocking main thread during proof generation
+  try {
+    await sdk.initThreadPool()
+  } catch {
+    // Thread pool may already be initialized or not supported
+  }
+
   const account = new sdk.Account({ privateKey: FAUCET_PRIVATE_KEY })
   // SDK auto-appends "/testnet" — use base URL without path
   const sdkEndpoint = RPC_URL.replace('/v1', '/v2').replace(/\/testnet$/, '')
