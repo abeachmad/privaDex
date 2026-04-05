@@ -21,7 +21,7 @@ export const VENUE_CAPABILITIES: Record<VenueKey, VenueCapability> = {
     enabledForDirectExecution: true,
     status: 'experimental',
     shortLabel: 'Experimental',
-    detail: 'Intent submission works, but settlement, claim, cancel indexing, and price verification are not automated end-to-end yet.',
+    detail: 'Supports ALEO/USDCx, BTCx/USDCx, ETHx/USDCx, and BTCx/ETHx. Intent submission works; settlement and claims are manual.',
   },
   orderbook: {
     enabledInRouter: false,

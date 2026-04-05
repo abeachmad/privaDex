@@ -44,8 +44,9 @@ export async function faucetMintPublic(
   await sdk.initializeWasm()
 
   const account = new sdk.Account({ privateKey: FAUCET_PRIVATE_KEY })
-  // SDK's AleoNetworkClient auto-appends "/testnet", so pass base URL only
-  const pm = new sdk.ProgramManager(RPC_URL, undefined, undefined)
+  // SDK auto-appends "/testnet" — use base URL without path
+  const sdkEndpoint = RPC_URL.replace('/v1', '/v2').replace(/\/testnet$/, '')
+  const pm = new sdk.ProgramManager(sdkEndpoint, undefined, undefined)
   pm.setAccount(account)
 
   const inputs = [

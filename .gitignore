@@ -15,6 +15,11 @@ dist-ssr
 .darkpool/
 ops/systemd/*.env
 
+# Contract build artifacts
+contracts/*/build/
+contracts/*/*.bak
+contracts/*/*.full
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

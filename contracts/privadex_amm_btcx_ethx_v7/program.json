@@ -1,0 +1,13 @@
+{
+  "program": "privadex_amm_btcx_ethx_v7.aleo",
+  "version": "0.1.0",
+  "description": "PrivaDEX AMM for BTCx/ETHx (token_registry)",
+  "license": "MIT",
+  "dependencies": [
+    {
+      "name": "token_registry.aleo",
+      "location": "network",
+      "network": "testnet"
+    }
+  ]
+}

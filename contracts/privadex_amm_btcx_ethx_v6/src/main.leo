@@ -37,6 +37,36 @@ program privadex_amm_btcx_ethx_v6.aleo {
     mapping last_swap_block: u64 => u32;
 
     // ADD LIQUIDITY
+// ASSERT POOL SNAPSHOT (used by dark pool for price verification)
+    async transition assert_pool_snapshot(
+        pool_id: u64,
+        reserve_a_snapshot: u128,
+        reserve_b_snapshot: u128,
+        fee_bps_snapshot: u64,
+    ) -> Future {
+        let f: Future = finalize_assert_pool_snapshot(
+            pool_id,
+            reserve_a_snapshot,
+            reserve_b_snapshot,
+            fee_bps_snapshot,
+        );
+        return f;
+    }
+
+    async function finalize_assert_pool_snapshot(
+        pool_id: u64,
+        reserve_a_snapshot: u128,
+        reserve_b_snapshot: u128,
+        fee_bps_snapshot: u64,
+    ) {
+        let live_reserve_a: u128 = Mapping::get_or_use(reserve_a, pool_id, 0u128);
+        let live_reserve_b: u128 = Mapping::get_or_use(reserve_b, pool_id, 0u128);
+        let live_fee: u64 = Mapping::get_or_use(fee_bps, pool_id, DEFAULT_FEE);
+
+        assert(live_reserve_a == reserve_a_snapshot);
+        assert(live_reserve_b == reserve_b_snapshot);
+        assert(live_fee == fee_bps_snapshot);
+    }
     async transition add_liquidity(
         btcx_in: token_registry.aleo/Token,
         ethx_in: token_registry.aleo/Token,

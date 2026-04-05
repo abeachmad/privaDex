@@ -1,0 +1,18 @@
+{
+  "program": "privadex_darkpool_btcx_v1.aleo",
+  "version": "0.1.0",
+  "description": "PrivaDEX dark pool \u2014 BTCx/USDCx trading pair",
+  "license": "MIT",
+  "dependencies": [
+    {
+      "name": "token_registry.aleo",
+      "location": "network",
+      "network": "testnet"
+    },
+    {
+      "name": "test_usdcx_stablecoin.aleo",
+      "location": "network",
+      "network": "testnet"
+    }
+  ]
+}

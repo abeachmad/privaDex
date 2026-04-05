@@ -65,17 +65,24 @@ export async function findBestRoute(
     return emptyResult("Cannot fetch pool data. Check your connection.");
   }
 
-  // Dark Pool and Order Book stay visible in the UI, but the blind router only
-  // auto-routes into venues that are executable and fully supported end-to-end.
-  const supportsDarkPoolAndOB = poolId === POOL_IDS.ALEO_USDCX;
+  // Dark Pool now supports ALEO/USDCx, BTCx/USDCx, ETHx/USDCx, BTCx/ETHx
+  // Order Book remains ALEO/USDCx only
+  const DARK_POOL_POOLS = new Set([
+    POOL_IDS.ALEO_USDCX,
+    POOL_IDS.BTCX_USDCX,
+    POOL_IDS.ETHX_USDCX,
+    POOL_IDS.BTCX_ETHX,
+  ]);
+  const supportsDarkPool = DARK_POOL_POOLS.has(poolId);
+  const supportsOrderBook = poolId === POOL_IDS.ALEO_USDCX;
 
   // Evaluate all venues in parallel
   const [ammQuote, dpQuote, obQuote] = await Promise.all([
     evaluateAmm(amountIn, isAtoB, poolId, reserves),
-    supportsDarkPoolAndOB
+    supportsDarkPool
       ? evaluateDarkPool(amountIn, isAtoB, reserves)
-      : Promise.resolve<VenueQuote>({ venue: "darkpool", available: false, amountOut: 0n, priceImpact: 0, feeBps: 0, executionType: "batched", settlementTime: "~2min", reason: "Only available for ALEO/USDCx" }),
-    supportsDarkPoolAndOB
+      : Promise.resolve<VenueQuote>({ venue: "darkpool", available: false, amountOut: 0n, priceImpact: 0, feeBps: 0, executionType: "batched", settlementTime: "~2min", reason: "Dark Pool not available for this pair" }),
+    supportsOrderBook
       ? evaluateOrderBook(amountIn, isAtoB, reserves)
       : Promise.resolve<VenueQuote>({ venue: "orderbook", available: false, amountOut: 0n, priceImpact: 0, feeBps: 0, executionType: "conditional", settlementTime: "When matched", reason: "Only available for ALEO/USDCx" }),
   ]);

@@ -7,7 +7,7 @@
 import { useState, useCallback } from 'react'
 import { useWallet } from '../context/WalletContext'
 import {
-  executeOnChain, pollTransactionStatus,
+  executeOnChain, pollTransactionStatus, parseLeoInt,
   resolveOnChainTransactionId, fetchTransactionBody,
   fetchPoolReservesStrict, prepareCreditsRecordForTx, prepareUsdcxForTx,
   prepareRegistryTokenForTx,
@@ -344,6 +344,21 @@ export function usePoolOperations() {
       }
 
       let inputs = buildInputs()
+
+      // ── Pre-execution record validation ────────────────────────────────
+      // Verify token records have sufficient balance before submitting
+      if (!config.tokenAIsCredits && usedRecA) {
+        const recAmtA = parseLeoInt((usedRecA.match(/amount:\s*(\d+u128)/)?.[1]) ?? '0u128')
+        if (recAmtA < amtA) {
+          throw new Error(`${config.symbolA} record has ${Number(recAmtA)/1e6} but need ${Number(amtA)/1e6}. Disconnect wallet and reconnect.`)
+        }
+      }
+      if (usedRecB && config.symbolB !== 'USDCx') {
+        const recAmtB = parseLeoInt((usedRecB.match(/amount:\s*(\d+u128)/)?.[1]) ?? '0u128')
+        if (recAmtB < amtB) {
+          throw new Error(`${config.symbolB} record has ${Number(recAmtB)/1e6} but need ${Number(amtB)/1e6}. Disconnect wallet and reconnect.`)
+        }
+      }
 
       // ── Diagnostic logging ──────────────────────────────────────────────
       console.log('[addLiquidity] === DIAGNOSTIC DUMP ===')

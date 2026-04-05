@@ -184,7 +184,7 @@ export function useFaucetMint() {
         } else {
           const { prepareRegistryTokenForTx } = await import('../lib/aleo')
           const tokenRec = await prepareRegistryTokenForTx(walletExecute, requestRecords, regId, amountBig, addr)
-          await executeOnChain(walletExecute, PROGRAMS.TOKEN_REGISTRY, 'transfer_private_to_public', [tokenRec, regId, addr, `${amountBig}u128`], 1_500_000, false, [0])
+          await executeOnChain(walletExecute, PROGRAMS.TOKEN_REGISTRY, 'transfer_private_to_public', [addr, `${amountBig}u128`, tokenRec], 1_500_000, false, [2])
         }
       }
       const dirLabel = direction === 'public-to-private' ? 'private' : 'public'

@@ -588,9 +588,10 @@ export function useSwapExecute() {
         }
 
       } else if (venue === 'darkpool') {
-        // ─── Dark Pool (ALEO/USDCx only) ───
-        if (poolId !== POOL_IDS.ALEO_USDCX) {
-          throw new Error('Dark Pool only supports ALEO/USDCx pair. Use AMM for this trade.')
+        // ─── Dark Pool ───
+        const DARKPOOL_POOLS = new Set([POOL_IDS.ALEO_USDCX, POOL_IDS.BTCX_USDCX, POOL_IDS.ETHX_USDCX, POOL_IDS.BTCX_ETHX])
+        if (!DARKPOOL_POOLS.has(poolId)) {
+          throw new Error('Dark Pool not available for this pair. Use AMM.')
         }
         setStatusMsg('Checking dark pool readiness...')
         const darkPoolInit = await fetchDarkPoolInitializationState()

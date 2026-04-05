@@ -1,0 +1,18 @@
+{
+  "program": "privadex_amm_native_ethx_v8.aleo",
+  "version": "0.1.0",
+  "description": "PrivaDEX AMM for ALEO/ETHx (token_registry)",
+  "license": "MIT",
+  "dependencies": [
+    {
+      "name": "credits.aleo",
+      "location": "network",
+      "network": "testnet"
+    },
+    {
+      "name": "token_registry.aleo",
+      "location": "network",
+      "network": "testnet"
+    }
+  ]
+}

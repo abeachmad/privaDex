@@ -15,6 +15,21 @@ import { venueCapabilityReason } from '../lib/venueCapabilities'
 
 type Tab = 'submit' | 'pending' | 'settled'
 
+interface DarkPoolPair {
+  id: string
+  label: string
+  base: string
+  quote: string
+  poolId: number
+}
+
+const DARK_POOL_PAIRS: DarkPoolPair[] = [
+  { id: 'aleo-usdcx', label: 'ALEO / USDCx', base: 'ALEO', quote: 'USDCx', poolId: POOL_IDS.ALEO_USDCX },
+  { id: 'btcx-usdcx', label: 'BTCx / USDCx', base: 'BTCx', quote: 'USDCx', poolId: POOL_IDS.BTCX_USDCX },
+  { id: 'ethx-usdcx', label: 'ETHx / USDCx', base: 'ETHx', quote: 'USDCx', poolId: POOL_IDS.ETHX_USDCX },
+  { id: 'btcx-ethx', label: 'BTCx / ETHx', base: 'BTCx', quote: 'ETHx', poolId: POOL_IDS.BTCX_ETHX },
+]
+
 const PROOF_LABELS: Record<string, string> = {
   idle: '',
   preparing: 'Preparing records…',
@@ -46,20 +61,28 @@ function actionStatusLabel(txStatus: string | null, mode: 'claim' | 'cancel' | n
   return `${mode === 'claim' ? 'Claiming' : 'Cancelling'} on-chain…`
 }
 
+function pairForPoolId(poolId: number): DarkPoolPair {
+  return DARK_POOL_PAIRS.find(p => p.poolId === poolId) || DARK_POOL_PAIRS[0]
+}
+
 function inputSymbol(order: DarkPoolIntentEntry): string {
-  return order.isBuy ? 'USDCx' : 'ALEO'
+  const pair = pairForPoolId(order.poolId)
+  return order.isBuy ? pair.quote : pair.base
 }
 
 function outputSymbol(order: DarkPoolIntentEntry): string {
-  return order.isBuy ? 'ALEO' : 'USDCx'
+  const pair = pairForPoolId(order.poolId)
+  return order.isBuy ? pair.base : pair.quote
 }
 
 function receiptInputSymbol(receipt: DarkPoolReceiptEntry): string {
-  return receipt.isBuy ? 'USDCx' : 'ALEO'
+  const pair = pairForPoolId(receipt.poolId)
+  return receipt.isBuy ? pair.quote : pair.base
 }
 
 function receiptOutputSymbol(receipt: DarkPoolReceiptEntry): string {
-  return receipt.isBuy ? 'ALEO' : 'USDCx'
+  const pair = pairForPoolId(receipt.poolId)
+  return receipt.isBuy ? pair.base : pair.quote
 }
 
 function outcomeLabel(receipt: DarkPoolReceiptEntry): string {
@@ -86,6 +109,7 @@ export default function DarkPool() {
   } = useDarkPoolOrders()
 
   const [tab, setTab] = useState<Tab>('submit')
+  const [selectedPair, setSelectedPair] = useState<DarkPoolPair>(DARK_POOL_PAIRS[0])
   const [side, setSide] = useState<'buy' | 'sell'>('buy')
   const [amount, setAmount] = useState('')
 
@@ -101,11 +125,11 @@ export default function DarkPool() {
 
     const isBuy = side === 'buy'
     const success = await executeSwap(
-      isBuy ? 'USDCx' : 'ALEO',
-      isBuy ? 'ALEO' : 'USDCx',
+      isBuy ? selectedPair.quote : selectedPair.base,
+      isBuy ? selectedPair.base : selectedPair.quote,
       parsed,
       'darkpool',
-      POOL_IDS.ALEO_USDCX,
+      selectedPair.poolId,
       !isBuy,
       0n,
     )
@@ -134,7 +158,7 @@ export default function DarkPool() {
             <h1 className="font-display text-2xl text-text-primary">Dark Pool</h1>
             <PrivacyBadge level="full" size="md" />
           </div>
-          <p className="text-xs text-text-tertiary">Experimental intent flow for ALEO / USDCx batch settlement</p>
+          <p className="text-xs text-text-tertiary">Private epoch-based batch settlement across multiple pairs</p>
         </div>
       </motion.div>
 
@@ -190,12 +214,30 @@ export default function DarkPool() {
               transition={{ duration: 0.4 }}
             >
               <div className="rounded-2xl border border-border-md bg-carbon shadow-deep overflow-hidden">
-                <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Moon size={16} className="text-cyan" />
-                    <span className="font-mono text-sm text-text-primary">ALEO / USDCx</span>
+                <div className="px-6 py-4 border-b border-border">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <Moon size={16} className="text-cyan" />
+                      <span className="font-mono text-sm text-text-primary">{selectedPair.label}</span>
+                    </div>
+                    <span className="text-xs font-mono text-text-tertiary">Epoch #{darkPool.currentEpoch || '—'}</span>
                   </div>
-                  <span className="text-xs font-mono text-text-tertiary">Epoch #{darkPool.currentEpoch || '—'}</span>
+                  <div className="flex gap-1.5">
+                    {DARK_POOL_PAIRS.map(pair => (
+                      <button
+                        key={pair.id}
+                        onClick={() => { setSelectedPair(pair); setAmount(''); if (isFinalized || error) reset() }}
+                        disabled={isExecuting}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition-all press-scale disabled:opacity-50 ${
+                          selectedPair.id === pair.id
+                            ? 'bg-cyan/10 border border-cyan/20 text-cyan'
+                            : 'border border-border text-text-tertiary hover:text-text-primary'
+                        }`}
+                      >
+                        {pair.base}/{pair.quote}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="p-6">
@@ -209,7 +251,7 @@ export default function DarkPool() {
                           : 'bg-glass border border-border text-text-secondary'
                       }`}
                     >
-                      Buy ALEO
+                      Buy {selectedPair.base}
                     </button>
                     <button
                       onClick={() => { setSide('sell'); if (isFinalized || error) reset() }}
@@ -220,13 +262,13 @@ export default function DarkPool() {
                           : 'bg-glass border border-border text-text-secondary'
                       }`}
                     >
-                      Sell ALEO
+                      Sell {selectedPair.base}
                     </button>
                   </div>
 
                   <div className="p-4 rounded-xl border border-border bg-glass mb-6">
                     <div className="text-[10px] font-mono text-text-tertiary uppercase tracking-wider mb-2">
-                      Amount ({side === 'buy' ? 'USDCx' : 'ALEO'})
+                      Amount ({side === 'buy' ? selectedPair.quote : selectedPair.base})
                     </div>
                     <input
                       type="text"
@@ -449,7 +491,7 @@ export default function DarkPool() {
                       <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-3">
                         <div>
                           <div className="text-sm font-medium text-text-primary">
-                            {order.isBuy ? 'Buy ALEO' : 'Sell ALEO'}
+                            {order.isBuy ? `Buy ${selectedPair?.base || 'ALEO'}` : `Sell ${selectedPair?.base || 'ALEO'}`}
                           </div>
                           <div className="text-[11px] text-text-ghost font-mono mt-1">
                             Epoch #{order.epochId} · Pool #{order.poolId}
@@ -622,7 +664,7 @@ export default function DarkPool() {
                     <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-3">
                       <div>
                         <div className="text-sm font-medium text-text-primary">
-                          {receipt.isBuy ? 'Buy ALEO' : 'Sell ALEO'}
+                          {receipt.isBuy ? `Buy ${selectedPair?.base || 'ALEO'}` : `Sell ${selectedPair?.base || 'ALEO'}`}
                         </div>
                         <div className="text-[11px] text-text-ghost font-mono mt-1">
                           Epoch #{receipt.epochId} · Pool #{receipt.poolId}

@@ -43,6 +43,9 @@ const REGISTERED_PROGRAMS = Array.from(new Set([
   PROGRAM_IDS.AMM_NATIVE_BTCX,
   PROGRAM_IDS.AMM_NATIVE_ETHX,
   PROGRAM_IDS.AMM_BTCX_ETHX,
+  PROGRAM_IDS.DARKPOOL_BTCX,
+  PROGRAM_IDS.DARKPOOL_ETHX,
+  PROGRAM_IDS.DARKPOOL_BTCX_ETHX,
 ]))
 
 // ─── Wallet Context ──────────────────────────────────────────────────────────

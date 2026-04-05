@@ -4,17 +4,20 @@
 export const PROGRAMS = {
   TOKEN:          import.meta.env.VITE_PROGRAM_TOKEN          || "privadex_token_v2.aleo",
   AMM:            import.meta.env.VITE_PROGRAM_AMM            || "privadex_amm_v10.aleo",
-  AMM_BTCX:       import.meta.env.VITE_PROGRAM_AMM_BTCX       || "privadex_amm_btcx_v6.aleo",
-  AMM_ETHX:       import.meta.env.VITE_PROGRAM_AMM_ETHX       || "privadex_amm_ethx_v6.aleo",
-  AMM_NATIVE_BTCX: import.meta.env.VITE_PROGRAM_AMM_NATIVE_BTCX || "privadex_amm_native_btcx_v7.aleo",
-  AMM_NATIVE_ETHX: import.meta.env.VITE_PROGRAM_AMM_NATIVE_ETHX || "privadex_amm_native_ethx_v7.aleo",
-  AMM_BTCX_ETHX:   import.meta.env.VITE_PROGRAM_AMM_BTCX_ETHX   || "privadex_amm_btcx_ethx_v6.aleo",
+  AMM_BTCX:       import.meta.env.VITE_PROGRAM_AMM_BTCX       || "privadex_amm_btcx_v7.aleo",
+  AMM_ETHX:       import.meta.env.VITE_PROGRAM_AMM_ETHX       || "privadex_amm_ethx_v7.aleo",
+  AMM_NATIVE_BTCX: import.meta.env.VITE_PROGRAM_AMM_NATIVE_BTCX || "privadex_amm_native_btcx_v8.aleo",
+  AMM_NATIVE_ETHX: import.meta.env.VITE_PROGRAM_AMM_NATIVE_ETHX || "privadex_amm_native_ethx_v8.aleo",
+  AMM_BTCX_ETHX:   import.meta.env.VITE_PROGRAM_AMM_BTCX_ETHX   || "privadex_amm_btcx_ethx_v7.aleo",
   USDCX:          import.meta.env.VITE_PROGRAM_USDCX          || "test_usdcx_stablecoin.aleo",
   TOKEN_REGISTRY: import.meta.env.VITE_PROGRAM_TOKEN_REGISTRY || "token_registry.aleo",
   // Legacy standalone programs (kept for balance migration)
   BTCX_LEGACY:    "test_btcx_token.aleo",
   ETHX_LEGACY:    "test_ethx_token.aleo",
   DARKPOOL:       import.meta.env.VITE_PROGRAM_DARKPOOL       || "privadex_darkpool_v4.aleo",
+  DARKPOOL_BTCX:  import.meta.env.VITE_PROGRAM_DARKPOOL_BTCX  || "privadex_darkpool_btcx_v1.aleo",
+  DARKPOOL_ETHX:  import.meta.env.VITE_PROGRAM_DARKPOOL_ETHX  || "privadex_darkpool_ethx_v1.aleo",
+  DARKPOOL_BTCX_ETHX: import.meta.env.VITE_PROGRAM_DARKPOOL_BTCX_ETHX || "privadex_darkpool_btcx_ethx_v1.aleo",
   ORDERBOOK:      import.meta.env.VITE_PROGRAM_ORDERBOOK      || "privadex_orderbook_v4.aleo",
   ROUTER:         import.meta.env.VITE_PROGRAM_ROUTER         || "privadex_router_v2.aleo",
 } as const;
@@ -293,8 +296,8 @@ export const EMPTY_MERKLE_PROOFS = `[${EMPTY_MERKLE_PROOF}, ${EMPTY_MERKLE_PROOF
 
 const PARTIAL_CREDITS_ADD_LIQ_PROGRAMS = new Set([
   "privadex_amm_v10.aleo",
-  "privadex_amm_native_btcx_v7.aleo",
-  "privadex_amm_native_ethx_v7.aleo",
+  "privadex_amm_native_btcx_v8.aleo",
+  "privadex_amm_native_ethx_v8.aleo",
 ]);
 
 export function supportsPartialCreditsAddLiquidity(program: string): boolean {
