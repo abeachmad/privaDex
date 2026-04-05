@@ -30,7 +30,7 @@ export default defineConfig({
     strictPort: true,
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
+      'Cross-Origin-Embedder-Policy': 'credentialless',
     },
     watch: {
       ignored: ['**/.bg-shell/**', '**/node_modules/**', '**/dist/**', '**/.gsd/**'],
