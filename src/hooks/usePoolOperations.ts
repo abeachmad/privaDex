@@ -217,17 +217,33 @@ export function usePoolOperations() {
         } else if (config.tokenAIsCredits) {
           setStatusMsg('Preparing ALEO record...')
           nextRecA = await prepareCreditsRecordForTx(
-            walletExecute, requestRecords, amountForA, address, (m) => setStatusMsg(m),
+            walletExecute, requestRecords, amountForA, address, (m) => setStatusMsg(m), exclusions?.recordA, rememberPrepTx,
           )
 
           const regId = registryTokenIdForSymbol(config.symbolB)!
           setStatusMsg(`Preparing ${config.symbolB} record...`)
-          nextRecB = await prepareRegistryTokenForTx(walletExecute, requestRecords, regId, amountForB, address)
+          nextRecB = await prepareRegistryTokenForTx(
+            walletExecute,
+            requestRecords,
+            regId,
+            amountForB,
+            address,
+            exclusions?.recordB,
+            rememberPrepTx,
+          )
 
         } else if (config.symbolB === 'USDCx') {
           const regId = registryTokenIdForSymbol(config.symbolA)!
           setStatusMsg(`Preparing ${config.symbolA} record...`)
-          nextRecA = await prepareRegistryTokenForTx(walletExecute, requestRecords, regId, amountForA, address)
+          nextRecA = await prepareRegistryTokenForTx(
+            walletExecute,
+            requestRecords,
+            regId,
+            amountForA,
+            address,
+            exclusions?.recordA,
+            rememberPrepTx,
+          )
 
           setStatusMsg('Preparing USDCx record...')
           const usdcxResult = await prepareUsdcxForTx(
@@ -240,9 +256,25 @@ export function usePoolOperations() {
           const regA = registryTokenIdForSymbol(config.symbolA)!
           const regB = registryTokenIdForSymbol(config.symbolB)!
           setStatusMsg(`Preparing ${config.symbolA} record...`)
-          nextRecA = await prepareRegistryTokenForTx(walletExecute, requestRecords, regA, amountForA, address)
+          nextRecA = await prepareRegistryTokenForTx(
+            walletExecute,
+            requestRecords,
+            regA,
+            amountForA,
+            address,
+            exclusions?.recordA,
+            rememberPrepTx,
+          )
           setStatusMsg(`Preparing ${config.symbolB} record...`)
-          nextRecB = await prepareRegistryTokenForTx(walletExecute, requestRecords, regB, amountForB, address)
+          nextRecB = await prepareRegistryTokenForTx(
+            walletExecute,
+            requestRecords,
+            regB,
+            amountForB,
+            address,
+            exclusions?.recordB,
+            rememberPrepTx,
+          )
         }
 
         return { usedRecA: nextRecA, usedRecB: nextRecB, merkleProofs: nextMerkleProofs, prepTxIds }

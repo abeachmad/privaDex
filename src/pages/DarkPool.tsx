@@ -93,11 +93,15 @@ function outcomeLabel(receipt: DarkPoolReceiptEntry): string {
 
 export default function DarkPool() {
   const { connected, connect } = useWallet()
+  const [tab, setTab] = useState<Tab>('submit')
+  const [selectedPair, setSelectedPair] = useState<DarkPoolPair>(DARK_POOL_PAIRS[0])
+  const [side, setSide] = useState<'buy' | 'sell'>('buy')
+  const [amount, setAmount] = useState('')
   const {
     proofStatus, txStatus, txId, error, statusMsg,
     executeSwap, reset,
   } = useSwapExecute()
-  const darkPool = useDarkPoolState()
+  const darkPool = useDarkPoolState(selectedPair.poolId)
   const {
     pendingOrders,
     settledOrders,
@@ -107,11 +111,6 @@ export default function DarkPool() {
     cancelIntent,
     refresh,
   } = useDarkPoolOrders()
-
-  const [tab, setTab] = useState<Tab>('submit')
-  const [selectedPair, setSelectedPair] = useState<DarkPoolPair>(DARK_POOL_PAIRS[0])
-  const [side, setSide] = useState<'buy' | 'sell'>('buy')
-  const [amount, setAmount] = useState('')
 
   const isExecuting = proofStatus !== 'idle' || (txStatus !== null && txStatus !== 'finalized' && txStatus !== 'rejected')
   const isFinalized = txStatus === 'finalized'

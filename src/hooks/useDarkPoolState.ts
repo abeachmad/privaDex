@@ -3,6 +3,7 @@
  */
 import { useState, useEffect, useCallback } from 'react'
 import { fetchDarkPoolInitializationState, fetchEpochState, type EpochState } from '../lib/aleo'
+import { POOL_IDS, getDarkPoolConfig } from '../lib/programs'
 
 export interface DarkPoolState {
   blockHeight: number
@@ -13,7 +14,7 @@ export interface DarkPoolState {
   loading: boolean
 }
 
-export function useDarkPoolState() {
+export function useDarkPoolState(poolId: number = POOL_IDS.ALEO_USDCX) {
   const [state, setState] = useState<DarkPoolState>({
     blockHeight: 0,
     currentEpoch: 0,
@@ -25,6 +26,11 @@ export function useDarkPoolState() {
 
   const fetchState = useCallback(async () => {
     try {
+      const darkPoolConfig = getDarkPoolConfig(poolId)
+      if (!darkPoolConfig) {
+        setState(prev => ({ ...prev, initialized: false, loading: false }))
+        return
+      }
       const res = await fetch('https://api.explorer.provable.com/v1/testnet/latest/height', {
         signal: AbortSignal.timeout(5000),
       })
@@ -35,11 +41,11 @@ export function useDarkPoolState() {
       // Aleo testnet: ~1 block per ~3-4 seconds
       const secondsLeft = Math.max(1, Math.ceil(blocksLeft * 3.5))
 
-      const initState = await fetchDarkPoolInitializationState()
+      const initState = await fetchDarkPoolInitializationState(darkPoolConfig.program)
       let epochState: EpochState | null = null
       if (initState.initialized) {
         try {
-          epochState = await fetchEpochState(epochId)
+          epochState = await fetchEpochState(epochId, poolId, darkPoolConfig.program)
         } catch { /* no epoch data */ }
       }
 
@@ -54,7 +60,7 @@ export function useDarkPoolState() {
     } catch {
       setState(prev => ({ ...prev, loading: false }))
     }
-  }, [])
+  }, [poolId])
 
   useEffect(() => {
     fetchState()

@@ -9,15 +9,15 @@ import {
   resolveOnChainTransactionId, fetchTransactionBody,
   prepareCreditsRecordForTx, prepareExactCreditsRecord, prepareUsdcxForTx, prepareRegistryTokenForTx,
   fetchRecordsForTx, getRecordCredits, getPublicAleoBalance, fetchPoolReservesStrict, cpmmOutputWithFee,
-  registryTokenIdForSymbol, fetchDarkPoolInitializationState, extractWalletTransactionError,
+  registryTokenIdForSymbol, fetchDarkPoolInitializationState, extractWalletTransactionError, isProgramReachable,
 } from '../lib/aleo'
 import { isRecordManuallySpent, markRecordSpent } from '../lib/spentRecords'
 import {
   PROGRAMS, POOL_IDS, POOL_AMM_CONFIG,
-  DARKPOOL_FNS, ORDERBOOK_FNS, ROUTER_FNS,
+  ORDERBOOK_FNS, ROUTER_FNS, getDarkPoolConfig,
   buildSwapAleoForUsdcxInputs, buildSwapUsdcxForAleoInputs,
   buildSwapTokenForUsdcxInputs, buildSwapUsdcxForTokenInputs,
-  buildSwapNativeForTokenInputs,
+  buildSwapNativeForTokenInputs, buildSwapTokenForNativeInputs,
   buildPureTokenSwapInputs,
   buildRouterBtcxForEthxViaAleoInputs,
   buildRouterEthxForBtcxViaAleoInputs,
@@ -25,7 +25,7 @@ import {
   buildRouterBtcxForAleoViaEthxInputs,
   buildRouterAleoForEthxViaBtcxInputs,
   buildRouterEthxForAleoViaBtcxInputs,
-  buildDarkSellAleoInputs, buildDarkBuyAleoInputs,
+  buildDarkSellAleoInputs, buildDarkBuyAleoInputs, buildDarkTokenIntentInputs,
   buildSellLimitInputs, buildBuyLimitInputs,
   randomNonce, currentEpochId, expiryInEpochs, priceToFixed,
 } from '../lib/programs'
@@ -121,6 +121,7 @@ async function buildSwapRejectionMessage(
   txId: string,
   pairLabel: string,
   venue: Venue,
+  poolId?: number,
   walletTransactionStatus?: (txId: string) => Promise<any>,
 ): Promise<string> {
   const walletStatus = walletTransactionStatus ? await walletTransactionStatus(txId).catch(() => null) : null
@@ -160,15 +161,18 @@ async function buildSwapRejectionMessage(
   }
 
   if (venue === 'darkpool') {
-    const darkPoolInit = await fetchDarkPoolInitializationState()
+    const darkPoolProgram = poolId != null ? getDarkPoolConfig(poolId)?.program : undefined
+    const darkPoolInit = await fetchDarkPoolInitializationState(darkPoolProgram)
     if (darkPoolInit.reachable && !darkPoolInit.initialized) {
-      return `Dark Pool contract ${PROGRAMS.DARKPOOL} is not initialized on-chain yet. Ask an admin to run initialize(admin) before submitting intents.${txSuffix}`
+      return `Dark Pool contract ${darkPoolProgram || PROGRAMS.DARKPOOL} is not initialized on-chain yet. Ask an admin to run initialize(admin) before submitting intents.${txSuffix}`
     }
 
     if (
       lowerBody.includes('epoch_id') ||
       lowerBody.includes('current_epoch') ||
       lowerBody.includes('epoch_closed') ||
+      lowerBody.includes('submit_buy_') ||
+      lowerBody.includes('submit_sell_') ||
       lowerBody.includes('submit_buy_aleo') ||
       lowerBody.includes('submit_sell_aleo') ||
       lowerBody.includes('finalize_submit') ||
@@ -359,8 +363,15 @@ export function useSwapExecute() {
     const amountInBig = BigInt(Math.round(amountIn * 10 ** decimals))
     let usedRecord: string | null = null
     let submittedTxId: string | null = null
+    let atomicRouterReady: boolean | null = null
 
     try {
+      const canUseAtomicRouter = async () => {
+        if (atomicRouterReady != null) return atomicRouterReady
+        atomicRouterReady = await isProgramReachable(PROGRAMS.ROUTER)
+        return atomicRouterReady
+      }
+
       const prepareUsdcxInput = async (
         amountRequired: bigint,
         exclusions?: Set<string>,
@@ -384,7 +395,7 @@ export function useSwapExecute() {
 
       const maybeRetryWalletSideFailure = async (
         failedTxId: string,
-        scope: 'darkpool' | 'orderbook',
+        scope: 'all' | 'darkpool' | 'orderbook',
         rebuildSubmission: (reason: 'transport' | 'stale') => Promise<void>,
       ): Promise<string | null> => {
         if (walletName !== 'Shield Wallet') return null
@@ -515,7 +526,11 @@ export function useSwapExecute() {
           const liveOut = cpmmOutputWithFee(amountInBig, reserveIn, reserveOut, liveReserves.feesBps)
           let routerPlan: AtomicRoutePlan | null = null
           try {
-            if (usedRecord) {
+            const supportsAtomicRouter = poolId === POOL_IDS.ALEO_BTCX
+              || poolId === POOL_IDS.ALEO_ETHX
+              || poolId === POOL_IDS.BTCX_ETHX
+
+            if (usedRecord && supportsAtomicRouter && await canUseAtomicRouter()) {
               routerPlan = await chooseAtomicRouterPlan(poolId, isAtoB, amountInBig, minOut, usedRecord)
             }
           } catch (routeError) {
@@ -550,7 +565,9 @@ export function useSwapExecute() {
               ? buildSwapUsdcxForAleoInputs(usdcxRec, merkleProofs, poolId, amountInBig, liveReserves, minOut)
               : buildSwapUsdcxForTokenInputs(usdcxRec, merkleProofs, poolId, amountInBig, liveReserves, minOut)
           } else {
-            inputs = buildPureTokenSwapInputs(usedRecord!, poolId, amountInBig, liveReserves, minOut)
+            inputs = config.tokenAIsCredits
+              ? buildSwapTokenForNativeInputs(usedRecord!, poolId, amountInBig, liveReserves, minOut)
+              : buildPureTokenSwapInputs(usedRecord!, poolId, amountInBig, liveReserves, minOut)
           }
         }
 
@@ -558,6 +575,11 @@ export function useSwapExecute() {
 
         setStatusMsg(null)
         setProofStatus('proving')
+        if (walletName === 'Shield Wallet') {
+          await ensureShieldPrograms('all').catch((refreshErr) => {
+            console.warn('[SwapExecute] Pre-submit Shield refresh skipped for AMM', refreshErr)
+          })
+        }
         let id: string
         try {
           id = await executeOnChain(walletExecute, program, fnName, inputs, txFee, false, recordIndices)
@@ -572,6 +594,11 @@ export function useSwapExecute() {
           await buildAmmSubmission(usedRecord ? new Set([usedRecord]) : undefined)
           setStatusMsg(null)
           setProofStatus('proving')
+          if (walletName === 'Shield Wallet') {
+            await ensureShieldPrograms('all').catch((refreshErr) => {
+              console.warn('[SwapExecute] Shield refresh skipped during AMM stale-input retry', refreshErr)
+            })
+          }
           id = await executeOnChain(walletExecute, program, fnName, inputs, txFee, false, recordIndices)
         }
         if (usedRecord) markRecordSpent(usedRecord)
@@ -579,9 +606,24 @@ export function useSwapExecute() {
         setTxId(id)
         setProofStatus('verified')
         setTxStatus('pending')
-        const finalStatus = await pollTransactionStatus(id, setTxStatus, 3_000, 180_000, walletTxStatus)
+        let finalStatus = await pollTransactionStatus(id, setTxStatus, 3_000, 180_000, walletTxStatus)
         if (finalStatus === 'rejected') {
-          setError(await buildSwapRejectionMessage(id, `${fromToken}/${toToken}`, venue, walletTxStatus))
+          const lastUsedRecord = usedRecord
+          const retriedTxId = await maybeRetryWalletSideFailure(id, 'all', async (reason) => {
+            if (reason === 'stale' && lastUsedRecord) {
+              markRecordSpent(lastUsedRecord)
+            }
+            await buildAmmSubmission(
+              reason === 'stale' && lastUsedRecord ? new Set([lastUsedRecord]) : undefined,
+            )
+          })
+          if (retriedTxId) {
+            id = retriedTxId
+            finalStatus = await pollTransactionStatus(id, setTxStatus, 3_000, 180_000, walletTxStatus)
+          }
+        }
+        if (finalStatus === 'rejected') {
+          setError(await buildSwapRejectionMessage(id, `${fromToken}/${toToken}`, venue, poolId, walletTxStatus))
           setProofStatus('idle')
           window.dispatchEvent(new Event('privadex:txEnd'))
           return false
@@ -589,55 +631,72 @@ export function useSwapExecute() {
 
       } else if (venue === 'darkpool') {
         // ─── Dark Pool ───
-        const DARKPOOL_POOLS = new Set([POOL_IDS.ALEO_USDCX, POOL_IDS.BTCX_USDCX, POOL_IDS.ETHX_USDCX, POOL_IDS.BTCX_ETHX])
-        if (!DARKPOOL_POOLS.has(poolId)) {
+        const darkPoolConfig = getDarkPoolConfig(poolId)
+        if (!darkPoolConfig) {
           throw new Error('Dark Pool not available for this pair. Use AMM.')
         }
         setStatusMsg('Checking dark pool readiness...')
-        const darkPoolInit = await fetchDarkPoolInitializationState()
+        const darkPoolInit = await fetchDarkPoolInitializationState(darkPoolConfig.program)
         if (darkPoolInit.reachable && !darkPoolInit.initialized) {
-          throw new Error(`Dark Pool contract ${PROGRAMS.DARKPOOL} is not initialized on-chain yet. Ask an admin to run initialize(admin) before submitting intents.`)
+          throw new Error(`Dark Pool contract ${darkPoolConfig.program} is not initialized on-chain yet. Ask an admin to run initialize(admin) before submitting intents.`)
         }
-        program = PROGRAMS.DARKPOOL
-        const buildDarkPoolSubmission = async (exclusions?: { credits?: Set<string>; usdcx?: Set<string> }) => {
+        program = darkPoolConfig.program
+        const buildDarkPoolSubmission = async (exclusions?: { base?: Set<string>; quote?: Set<string> }) => {
           const nonce = randomNonce()
 
           if (isAtoB) {
-            // SELL ALEO → USDCx
-            setStatusMsg('Preparing ALEO record...')
-            await prepareExactCreditsRecord(
-              walletExecute,
-              requestRecords,
-              address,
-              amountInBig,
-              (msg) => setStatusMsg(msg),
-              exclusions?.credits,
-            )
-            const freshCreds = await fetchRecordsForTx(requestRecords, 'credits.aleo')
-            const exactCred = freshCreds
-              .filter((r: any) => !r.spent && !isRecordManuallySpent(r))
-              .find((r: any) => {
-                const plaintext = r.recordPlaintext || r.plaintext
-                return !exclusions?.credits?.has(plaintext) && getRecordCredits(r) === amountInBig
-              })
-            if (!exactCred) throw new Error('Credits record not found.')
-            usedRecord = exactCred.recordPlaintext || exactCred.plaintext
+            if (darkPoolConfig.baseInputKind === 'credits') {
+              setStatusMsg('Preparing ALEO record...')
+              await prepareExactCreditsRecord(
+                walletExecute,
+                requestRecords,
+                address,
+                amountInBig,
+                (msg) => setStatusMsg(msg),
+                exclusions?.base,
+              )
+              const freshCreds = await fetchRecordsForTx(requestRecords, 'credits.aleo')
+              const exactCred = freshCreds
+                .filter((r: any) => !r.spent && !isRecordManuallySpent(r))
+                .find((r: any) => {
+                  const plaintext = r.recordPlaintext || r.plaintext
+                  return !exclusions?.base?.has(plaintext) && getRecordCredits(r) === amountInBig
+                })
+              if (!exactCred) throw new Error('Credits record not found.')
+              usedRecord = exactCred.recordPlaintext || exactCred.plaintext
+            } else {
+              const baseRegistryId = registryTokenIdForSymbol(darkPoolConfig.baseSymbol)
+              if (!baseRegistryId) throw new Error(`Unsupported dark pool base token: ${darkPoolConfig.baseSymbol}`)
+              setStatusMsg(`Preparing ${darkPoolConfig.baseSymbol} record...`)
+              usedRecord = await prepareRegistryTokenInput(baseRegistryId, amountInBig, exclusions?.base)
+            }
             setStatusMsg('Checking dark pool epoch...')
             const { epochId } = await waitForSafeDarkPoolEpochWindow(setStatusMsg)
-            inputs = buildDarkSellAleoInputs(usedRecord!, poolId, minOut, nonce, epochId)
-            fnName = DARKPOOL_FNS.SUBMIT_SELL_ALEO
+            inputs = darkPoolConfig.baseInputKind === 'credits'
+              ? buildDarkSellAleoInputs(usedRecord!, poolId, minOut, nonce, epochId)
+              : buildDarkTokenIntentInputs(usedRecord!, poolId, amountInBig, minOut, nonce, epochId)
+            fnName = darkPoolConfig.submitSellFn
             recordIndices = [0]
             return
           }
 
-          // BUY ALEO ← USDCx
-          setStatusMsg('Preparing USDCx record...')
-          const { tokenRecord: usdcxRec, merkleProofs } = await prepareUsdcxInput(amountInBig, exclusions?.usdcx)
-          usedRecord = usdcxRec
-          setStatusMsg('Checking dark pool epoch...')
-          const { epochId } = await waitForSafeDarkPoolEpochWindow(setStatusMsg)
-          inputs = buildDarkBuyAleoInputs(usdcxRec, merkleProofs, poolId, amountInBig, minOut, nonce, epochId)
-          fnName = DARKPOOL_FNS.SUBMIT_BUY_ALEO
+          if (darkPoolConfig.quoteInputKind === 'usdcx') {
+            setStatusMsg('Preparing USDCx record...')
+            const { tokenRecord: usdcxRec, merkleProofs } = await prepareUsdcxInput(amountInBig, exclusions?.quote)
+            usedRecord = usdcxRec
+            setStatusMsg('Checking dark pool epoch...')
+            const { epochId } = await waitForSafeDarkPoolEpochWindow(setStatusMsg)
+            inputs = buildDarkBuyAleoInputs(usdcxRec, merkleProofs, poolId, amountInBig, minOut, nonce, epochId)
+          } else {
+            const quoteRegistryId = registryTokenIdForSymbol(darkPoolConfig.quoteSymbol)
+            if (!quoteRegistryId) throw new Error(`Unsupported dark pool quote token: ${darkPoolConfig.quoteSymbol}`)
+            setStatusMsg(`Preparing ${darkPoolConfig.quoteSymbol} record...`)
+            usedRecord = await prepareRegistryTokenInput(quoteRegistryId, amountInBig, exclusions?.quote)
+            setStatusMsg('Checking dark pool epoch...')
+            const { epochId } = await waitForSafeDarkPoolEpochWindow(setStatusMsg)
+            inputs = buildDarkTokenIntentInputs(usedRecord!, poolId, amountInBig, minOut, nonce, epochId)
+          }
+          fnName = darkPoolConfig.submitBuyFn
           recordIndices = [0]
         }
 
@@ -664,8 +723,8 @@ export function useSwapExecute() {
           setStatusMsg('Refreshing records after stale-input error...')
           await buildDarkPoolSubmission(
             isAtoB
-              ? { credits: usedRecord ? new Set([usedRecord]) : undefined }
-              : { usdcx: usedRecord ? new Set([usedRecord]) : undefined }
+              ? { base: usedRecord ? new Set([usedRecord]) : undefined }
+              : { quote: usedRecord ? new Set([usedRecord]) : undefined }
           )
           setStatusMsg(null)
           setProofStatus('proving')
@@ -691,8 +750,8 @@ export function useSwapExecute() {
               reason === 'stale'
                 ? (
                   isAtoB
-                    ? { credits: lastUsedRecord ? new Set([lastUsedRecord]) : undefined }
-                    : { usdcx: lastUsedRecord ? new Set([lastUsedRecord]) : undefined }
+                    ? { base: lastUsedRecord ? new Set([lastUsedRecord]) : undefined }
+                    : { quote: lastUsedRecord ? new Set([lastUsedRecord]) : undefined }
                 )
                 : undefined
             )
@@ -703,7 +762,7 @@ export function useSwapExecute() {
           }
         }
         if (finalStatus === 'rejected') {
-          setError(await buildSwapRejectionMessage(id, `${fromToken}/${toToken}`, venue, walletTxStatus))
+          setError(await buildSwapRejectionMessage(id, `${fromToken}/${toToken}`, venue, poolId, walletTxStatus))
           setProofStatus('idle')
           window.dispatchEvent(new Event('privadex:txEnd'))
           return false
@@ -720,7 +779,12 @@ export function useSwapExecute() {
           const height = await fetchLatestTestnetHeight()
           const nonce = randomNonce()
           const expiryBl = expiryInEpochs(height, 2) // 2 epochs ≈ 4min
-          const limitPrice = priceToFixed(Number(minOut) / Number(amountInBig) || 0.01)
+          const derivedLimitPrice = isAtoB
+            ? Number(minOut) / Number(amountInBig)
+            : Number(amountInBig) / Number(minOut)
+          const limitPrice = priceToFixed(
+            Number.isFinite(derivedLimitPrice) && derivedLimitPrice > 0 ? derivedLimitPrice : 0.01,
+          )
 
           if (isAtoB) {
             setStatusMsg('Preparing ALEO record...')
@@ -817,7 +881,7 @@ export function useSwapExecute() {
           }
         }
         if (finalStatus === 'rejected') {
-          setError(await buildSwapRejectionMessage(id, `${fromToken}/${toToken}`, venue, walletTxStatus))
+          setError(await buildSwapRejectionMessage(id, `${fromToken}/${toToken}`, venue, poolId, walletTxStatus))
           setProofStatus('idle')
           window.dispatchEvent(new Event('privadex:txEnd'))
           return false

@@ -18,8 +18,13 @@ import {
   buildDarkBuyClaimInputs,
   buildDarkSellClaimInputs,
   DARKPOOL_FNS,
-  PROGRAMS,
+  DARKPOOL_POOL_CONFIG,
+  getDarkPoolConfig,
 } from '../lib/programs'
+
+const DARKPOOL_PROGRAMS = Array.from(
+  new Set(Object.values(DARKPOOL_POOL_CONFIG).map(config => config.program)),
+)
 
 type DarkPoolOrderStatus = 'pending' | 'claimable'
 type DarkPoolActionMode = 'claim' | 'cancel'
@@ -133,10 +138,20 @@ export function useDarkPoolOrders() {
 
     setLoading(true)
     try {
-      const records = await fetchRecordsRobust(requestRecords, PROGRAMS.DARKPOOL, {
-        preferScanner: true,
-        skipCache: true,
-      })
+      const records = (
+        await Promise.all(
+          DARKPOOL_PROGRAMS.map(async (program) => {
+            try {
+              return await fetchRecordsRobust(requestRecords, program, {
+                preferScanner: true,
+                skipCache: true,
+              })
+            } catch {
+              return []
+            }
+          }),
+        )
+      ).flat()
 
       const liveRecords = records.filter((record: any) => !record?.spent)
       const rawIntents = liveRecords.filter(isDarkIntentRecord)
@@ -153,8 +168,14 @@ export function useDarkPoolOrders() {
         const [epochIdRaw, poolIdRaw] = key.split(':')
         const epochId = Number(epochIdRaw)
         const poolId = Number(poolIdRaw)
+        const darkPoolConfig = getDarkPoolConfig(poolId)
         try {
-          epochSnapshots.set(key, await fetchEpochState(epochId, poolId))
+          epochSnapshots.set(
+            key,
+            darkPoolConfig
+              ? await fetchEpochState(epochId, poolId, darkPoolConfig.program)
+              : null,
+          )
         } catch {
           epochSnapshots.set(key, null)
         }
@@ -243,7 +264,12 @@ export function useDarkPoolOrders() {
     })
 
     try {
-      const epochState = await fetchEpochState(order.epochId, order.poolId)
+      const darkPoolConfig = getDarkPoolConfig(order.poolId)
+      if (!darkPoolConfig) {
+        throw new Error(`Unsupported dark pool pair for pool ${order.poolId}.`)
+      }
+
+      const epochState = await fetchEpochState(order.epochId, order.poolId, darkPoolConfig.program)
       if (mode === 'claim' && !epochState.closed) {
         throw new Error(`Epoch #${order.epochId} is not settled yet.`)
       }
@@ -279,7 +305,7 @@ export function useDarkPoolOrders() {
 
       const txId = await executeOnChain(
         walletExecute,
-        PROGRAMS.DARKPOOL,
+        darkPoolConfig.program,
         functionName,
         inputs,
         1_500_000,

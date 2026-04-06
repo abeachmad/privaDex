@@ -16,10 +16,11 @@ import {
   fetchEpochState,
   fetchDarkPoolInitializationState,
   cpmmOutputWithFee,
+  isProgramReachable,
   priceImpact as calcPriceImpact,
   type PoolReserves,
 } from "./aleo";
-import { POOL_IDS, POOL_AMM_CONFIG } from "./programs";
+import { PROGRAMS, POOL_IDS, POOL_AMM_CONFIG, getDarkPoolConfig } from "./programs";
 import { VENUE_CAPABILITIES, venueCapabilityReason } from "./venueCapabilities";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -67,7 +68,7 @@ export async function findBestRoute(
 
   // Dark Pool now supports ALEO/USDCx, BTCx/USDCx, ETHx/USDCx, BTCx/ETHx
   // Order Book remains ALEO/USDCx only
-  const DARK_POOL_POOLS = new Set([
+  const DARK_POOL_POOLS = new Set<number>([
     POOL_IDS.ALEO_USDCX,
     POOL_IDS.BTCX_USDCX,
     POOL_IDS.ETHX_USDCX,
@@ -80,7 +81,7 @@ export async function findBestRoute(
   const [ammQuote, dpQuote, obQuote] = await Promise.all([
     evaluateAmm(amountIn, isAtoB, poolId, reserves),
     supportsDarkPool
-      ? evaluateDarkPool(amountIn, isAtoB, reserves)
+      ? evaluateDarkPool(amountIn, isAtoB, poolId, reserves)
       : Promise.resolve<VenueQuote>({ venue: "darkpool", available: false, amountOut: 0n, priceImpact: 0, feeBps: 0, executionType: "batched", settlementTime: "~2min", reason: "Dark Pool not available for this pair" }),
     supportsOrderBook
       ? evaluateOrderBook(amountIn, isAtoB, reserves)
@@ -148,6 +149,36 @@ async function evaluateAmm(
   let bestAmountOut = amountOut;
   let bestImpact = impact;
   let reason: string | undefined;
+  const supportsAtomicAltRoute = poolId === POOL_IDS.ALEO_BTCX
+    || poolId === POOL_IDS.ALEO_ETHX
+    || poolId === POOL_IDS.BTCX_ETHX;
+
+  if (!supportsAtomicAltRoute) {
+    return {
+      venue: "amm",
+      available: true,
+      amountOut: bestAmountOut,
+      priceImpact: bestImpact,
+      feeBps: reserves.feesBps,
+      executionType: "immediate",
+      settlementTime: "~15s",
+      reason,
+    };
+  }
+
+  const routerReady = await isProgramReachable(PROGRAMS.ROUTER);
+  if (!routerReady) {
+    return {
+      venue: "amm",
+      available: true,
+      amountOut: bestAmountOut,
+      priceImpact: bestImpact,
+      feeBps: reserves.feesBps,
+      executionType: "immediate",
+      settlementTime: "~15s",
+      reason,
+    };
+  }
 
   try {
     if (poolId === POOL_IDS.ALEO_BTCX) {
@@ -254,6 +285,7 @@ async function evaluateAmm(
 async function evaluateDarkPool(
   amountIn: bigint,
   isAtoB:   boolean,
+  poolId: number,
   reserves: PoolReserves,
 ): Promise<VenueQuote> {
   const base: Omit<VenueQuote, "available" | "amountOut" | "reason"> = {
@@ -274,7 +306,17 @@ async function evaluateDarkPool(
   }
 
   try {
-    const initState = await fetchDarkPoolInitializationState();
+    const darkPoolConfig = getDarkPoolConfig(poolId);
+    if (!darkPoolConfig) {
+      return {
+        ...base,
+        available: false,
+        amountOut: 0n,
+        reason: "Dark Pool not available for this pair",
+      };
+    }
+
+    const initState = await fetchDarkPoolInitializationState(darkPoolConfig.program);
     if (initState.reachable && !initState.initialized) {
       return {
         ...base,
@@ -295,7 +337,7 @@ async function evaluateDarkPool(
     const blocksLeft = 120 - (height % 120);
     const secsLeft   = Math.max(1, Math.ceil(blocksLeft * 15 / 60));
 
-    const epoch = await fetchEpochState(epochId);
+    const epoch = await fetchEpochState(epochId, poolId, darkPoolConfig.program);
 
     // Compute zero-slippage output at spot price (what dark pool would give)
     if (reserves.reserveA > 0n && reserves.reserveB > 0n) {

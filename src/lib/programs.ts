@@ -281,6 +281,66 @@ export const POOL_AMM_CONFIG: Record<number, PoolAmmConfig> = {
   },
 };
 
+export type DarkPoolInputKind = "credits" | "usdcx" | "registry";
+
+export interface DarkPoolPoolConfig {
+  program: string;
+  poolId: number;
+  baseSymbol: string;
+  quoteSymbol: string;
+  baseInputKind: DarkPoolInputKind;
+  quoteInputKind: DarkPoolInputKind;
+  submitSellFn: string;
+  submitBuyFn: string;
+}
+
+export const DARKPOOL_POOL_CONFIG: Record<number, DarkPoolPoolConfig> = {
+  [POOL_IDS.ALEO_USDCX]: {
+    program: PROGRAMS.DARKPOOL,
+    poolId: POOL_IDS.ALEO_USDCX,
+    baseSymbol: "ALEO",
+    quoteSymbol: "USDCx",
+    baseInputKind: "credits",
+    quoteInputKind: "usdcx",
+    submitSellFn: DARKPOOL_FNS.SUBMIT_SELL_ALEO,
+    submitBuyFn: DARKPOOL_FNS.SUBMIT_BUY_ALEO,
+  },
+  [POOL_IDS.BTCX_USDCX]: {
+    program: PROGRAMS.DARKPOOL_BTCX,
+    poolId: POOL_IDS.BTCX_USDCX,
+    baseSymbol: "BTCx",
+    quoteSymbol: "USDCx",
+    baseInputKind: "registry",
+    quoteInputKind: "usdcx",
+    submitSellFn: "submit_sell_btcx",
+    submitBuyFn: "submit_buy_btcx",
+  },
+  [POOL_IDS.ETHX_USDCX]: {
+    program: PROGRAMS.DARKPOOL_ETHX,
+    poolId: POOL_IDS.ETHX_USDCX,
+    baseSymbol: "ETHx",
+    quoteSymbol: "USDCx",
+    baseInputKind: "registry",
+    quoteInputKind: "usdcx",
+    submitSellFn: "submit_sell_ethx",
+    submitBuyFn: "submit_buy_ethx",
+  },
+  [POOL_IDS.BTCX_ETHX]: {
+    program: PROGRAMS.DARKPOOL_BTCX_ETHX,
+    poolId: POOL_IDS.BTCX_ETHX,
+    baseSymbol: "BTCx",
+    quoteSymbol: "ETHx",
+    baseInputKind: "registry",
+    quoteInputKind: "registry",
+    submitSellFn: "submit_sell_btcx",
+    submitBuyFn: "submit_buy_btcx",
+  },
+};
+
+export function getDarkPoolConfig(poolId: number): DarkPoolPoolConfig | null {
+  return DARKPOOL_POOL_CONFIG[poolId] ?? null;
+}
+
 // ─── MerkleProof placeholder for non-frozen addresses ────────────────────────
 // Non-inclusion proof for an empty freeze list (sorted merkle tree).
 // With all-zero siblings, depth=1 and max_leaf=1. Using leaf_index=1 triggers
@@ -717,6 +777,24 @@ export function buildDarkBuyAleoInputs(
   return [
     tokenRecord,
     merkleProofs,
+    `${poolId}u64`,
+    `${amountIn}u128`,
+    `${minOut}u128`,
+    `${nonce}field`,
+    `${epochId}u64`,
+  ];
+}
+
+export function buildDarkTokenIntentInputs(
+  tokenRecord: string,
+  poolId: number,
+  amountIn: bigint,
+  minOut: bigint,
+  nonce: bigint,
+  epochId: number,
+): string[] {
+  return [
+    tokenRecord,
     `${poolId}u64`,
     `${amountIn}u128`,
     `${minOut}u128`,

@@ -2,7 +2,7 @@
 // Aleo on-chain interaction helpers using Shield Wallet SDK
 import { markRecordSpent, isRecordManuallySpent } from "./spentRecords";
 import { getCachedRecords } from "./recordCache";
-import { PROGRAMS, REGISTRY_TOKEN_IDS, USDCX_FNS, EMPTY_MERKLE_PROOFS, POOL_IDS } from "./programs";
+import { PROGRAMS, REGISTRY_TOKEN_IDS, USDCX_FNS, EMPTY_MERKLE_PROOFS, POOL_IDS, getDarkPoolConfig } from "./programs";
 import { isScannerReady, fetchRecordsFromScanner } from "./recordScanner";
 
 // ─── Config (from env) ───────────────────────────────────────────────────────
@@ -11,6 +11,7 @@ const NETWORK = import.meta.env.VITE_NETWORK || "testnet";
 const API_BASE = `${RPC_URL}/${NETWORK}`;
 let sdkPromise: Promise<typeof import("@provablehq/sdk")> | null = null;
 let sdkReadyPromise: Promise<typeof import("@provablehq/sdk")> | null = null;
+const programReachabilityCache = new Map<string, Promise<boolean>>();
 
 async function getProvableSdk() {
   if (!sdkPromise) {
@@ -333,6 +334,25 @@ export async function fetchTransactionBody(txId: string): Promise<string | null>
   }
 }
 
+export async function isProgramReachable(program: string): Promise<boolean> {
+  if (!program) return false;
+
+  const cached = programReachabilityCache.get(program);
+  if (cached) return cached;
+
+  const pending = (async () => {
+    try {
+      const res = await fetch(`${API_BASE}/program/${program}`);
+      return res.ok;
+    } catch {
+      return false;
+    }
+  })();
+
+  programReachabilityCache.set(program, pending);
+  return pending;
+}
+
 // ─── Fetch public mapping value ────────────────────────────────────────────────
 /**
  * Reads a public mapping value from the Aleo testnet REST API.
@@ -485,9 +505,9 @@ function darkPoolEpochKey(epochId: number, poolId: number): string {
   return `${BigInt(epochId) * DARKPOOL_EPOCH_KEY_MULTIPLIER + BigInt(poolId)}u128`;
 }
 
-export async function fetchDarkPoolInitializationState(): Promise<DarkPoolInitializationState> {
-  const program = import.meta.env.VITE_PROGRAM_DARKPOOL || "privadex_darkpool_v4.aleo";
-  const { value, reachable } = await getMappingValueDetailed(program, "initialized", "true");
+export async function fetchDarkPoolInitializationState(program?: string): Promise<DarkPoolInitializationState> {
+  const targetProgram = program ?? import.meta.env.VITE_PROGRAM_DARKPOOL ?? "privadex_darkpool_v4.aleo";
+  const { value, reachable } = await getMappingValueDetailed(targetProgram, "initialized", "true");
 
   return {
     initialized: value === "true",
@@ -498,19 +518,20 @@ export async function fetchDarkPoolInitializationState(): Promise<DarkPoolInitia
 export async function fetchEpochState(
   epochId: number,
   poolId: number = POOL_IDS.ALEO_USDCX,
+  program?: string,
 ): Promise<EpochState> {
-  const program = import.meta.env.VITE_PROGRAM_DARKPOOL || "privadex_darkpool_v4.aleo";
-  const key     = darkPoolEpochKey(epochId, poolId);
+  const targetProgram = program ?? getDarkPoolConfig(poolId)?.program ?? import.meta.env.VITE_PROGRAM_DARKPOOL ?? "privadex_darkpool_v4.aleo";
+  const key = darkPoolEpochKey(epochId, poolId);
 
   const [bv, sv, cl, mp, fb, mb, ms, ic] = await Promise.all([
-    getMappingValue(program, "epoch_buy_volume",  key),
-    getMappingValue(program, "epoch_sell_volume", key),
-    getMappingValue(program, "epoch_closed",      key),
-    getMappingValue(program, "epoch_mid_price",   key),
-    getMappingValue(program, "epoch_fee_bps",     key),
-    getMappingValue(program, "epoch_matched_buy_volume", key),
-    getMappingValue(program, "epoch_matched_sell_volume", key),
-    getMappingValue(program, "intent_count",      key),
+    getMappingValue(targetProgram, "epoch_buy_volume", key),
+    getMappingValue(targetProgram, "epoch_sell_volume", key),
+    getMappingValue(targetProgram, "epoch_closed", key),
+    getMappingValue(targetProgram, "epoch_mid_price", key),
+    getMappingValue(targetProgram, "epoch_fee_bps", key),
+    getMappingValue(targetProgram, "epoch_matched_buy_volume", key),
+    getMappingValue(targetProgram, "epoch_matched_sell_volume", key),
+    getMappingValue(targetProgram, "intent_count", key),
   ]);
 
   return {
