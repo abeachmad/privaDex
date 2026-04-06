@@ -22,9 +22,16 @@ const SHIELDED_USDCX_PROGRAMS = Array.from(new Set([
 
 const DARKPOOL_REQUIRED_PROGRAMS = Array.from(new Set([
   ...SHIELDED_USDCX_PROGRAMS,
-  // Dark pool v4 imports the AMM for settlement price verification
+  PROGRAM_IDS.TOKEN_REGISTRY,
+  // Dark pool contracts import their paired AMM for settlement price verification
   PROGRAM_IDS.AMM,
+  PROGRAM_IDS.AMM_BTCX,
+  PROGRAM_IDS.AMM_ETHX,
+  PROGRAM_IDS.AMM_BTCX_ETHX,
   PROGRAM_IDS.DARKPOOL,
+  PROGRAM_IDS.DARKPOOL_BTCX,
+  PROGRAM_IDS.DARKPOOL_ETHX,
+  PROGRAM_IDS.DARKPOOL_BTCX_ETHX,
 ]))
 
 const ORDERBOOK_REQUIRED_PROGRAMS = Array.from(new Set([
@@ -53,6 +60,7 @@ const REGISTERED_PROGRAMS = Array.from(new Set([
   PROGRAM_IDS.DARKPOOL_ETHX,
   PROGRAM_IDS.DARKPOOL_BTCX_ETHX,
   PROGRAM_IDS.ORDERBOOK,
+  // PROGRAM_IDS.ROUTER — not deployed yet (snarkOS cross-program bug)
 ]))
 
 // ─── Wallet Context ──────────────────────────────────────────────────────────
