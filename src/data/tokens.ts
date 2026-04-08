@@ -60,13 +60,15 @@ export interface Pool {
   reserveB: number
 }
 
+// Pool registry — tvl/volume/apr/reserves are placeholders (always 0).
+// Real values are populated from on-chain via useOnChainPools.
 export const POOLS: Pool[] = [
-  { id: 'aleo-usdcx', tokenA: 'ALEO', tokenB: 'USDCx', tvl: 2_450_000, volume24h: 890_000, apr: 24.5, fee: 0.3, reserveA: 1_250_000, reserveB: 1_200_000 },
-  { id: 'btcx-usdcx', tokenA: 'BTCx', tokenB: 'USDCx', tvl: 4_120_000, volume24h: 1_560_000, apr: 18.2, fee: 0.3, reserveA: 62, reserveB: 2_060_000 },
-  { id: 'ethx-usdcx', tokenA: 'ETHx', tokenB: 'USDCx', tvl: 3_280_000, volume24h: 1_120_000, apr: 21.7, fee: 0.3, reserveA: 940, reserveB: 1_640_000 },
-  { id: 'aleo-btcx', tokenA: 'ALEO', tokenB: 'BTCx', tvl: 1_680_000, volume24h: 420_000, apr: 31.4, fee: 0.3, reserveA: 840_000, reserveB: 25.4 },
-  { id: 'aleo-ethx', tokenA: 'ALEO', tokenB: 'ETHx', tvl: 1_950_000, volume24h: 580_000, apr: 28.9, fee: 0.3, reserveA: 975_000, reserveB: 560 },
-  { id: 'btcx-ethx', tokenA: 'BTCx', tokenB: 'ETHx', tvl: 2_890_000, volume24h: 780_000, apr: 15.8, fee: 0.3, reserveA: 43.5, reserveB: 830 },
+  { id: 'aleo-usdcx', tokenA: 'ALEO', tokenB: 'USDCx', tvl: 0, volume24h: 0, apr: 0, fee: 0.3, reserveA: 0, reserveB: 0 },
+  { id: 'btcx-usdcx', tokenA: 'BTCx', tokenB: 'USDCx', tvl: 0, volume24h: 0, apr: 0, fee: 0.3, reserveA: 0, reserveB: 0 },
+  { id: 'ethx-usdcx', tokenA: 'ETHx', tokenB: 'USDCx', tvl: 0, volume24h: 0, apr: 0, fee: 0.3, reserveA: 0, reserveB: 0 },
+  { id: 'aleo-btcx', tokenA: 'ALEO', tokenB: 'BTCx', tvl: 0, volume24h: 0, apr: 0, fee: 0.3, reserveA: 0, reserveB: 0 },
+  { id: 'aleo-ethx', tokenA: 'ALEO', tokenB: 'ETHx', tvl: 0, volume24h: 0, apr: 0, fee: 0.3, reserveA: 0, reserveB: 0 },
+  { id: 'btcx-ethx', tokenA: 'BTCx', tokenB: 'ETHx', tvl: 0, volume24h: 0, apr: 0, fee: 0.3, reserveA: 0, reserveB: 0 },
 ]
 
 export type Venue = 'amm' | 'darkpool' | 'orderbook'
@@ -115,34 +117,6 @@ export interface LPPosition {
   tokenAAmount: number
   tokenBAmount: number
 }
-
-// Mock wallet balances
-export const MOCK_BALANCES: Record<string, number> = {
-  ALEO: 12_500,
-  USDCx: 8_750,
-  BTCx: 0.45,
-  ETHx: 3.2,
-}
-
-// Mock LP positions
-export const MOCK_LP_POSITIONS: LPPosition[] = [
-  { poolId: 'aleo-usdcx', tokenA: 'ALEO', tokenB: 'USDCx', sharePercent: 0.42, valueUsd: 10_290, earnedFees: 127.50, tokenAAmount: 5_250, tokenBAmount: 5_040 },
-  { poolId: 'ethx-usdcx', tokenA: 'ETHx', tokenB: 'USDCx', sharePercent: 0.18, valueUsd: 5_904, earnedFees: 68.20, tokenAAmount: 1.692, tokenBAmount: 2_952 },
-]
-
-// Mock dark orders
-export const MOCK_DARK_ORDERS: DarkOrder[] = [
-  { id: 'dk-001', pair: 'ALEO/USDCx', side: 'buy', amount: 5000, status: 'pending', epoch: 847, timestamp: Date.now() - 1800_000 },
-  { id: 'dk-002', pair: 'ALEO/USDCx', side: 'sell', amount: 2000, status: 'claimable', epoch: 846, settledPrice: 0.98, settledAmount: 1960, timestamp: Date.now() - 7200_000 },
-  { id: 'dk-003', pair: 'ALEO/USDCx', side: 'buy', amount: 10000, status: 'settled', epoch: 845, settledPrice: 0.96, settledAmount: 10416.67, timestamp: Date.now() - 14400_000 },
-]
-
-// Mock limit orders
-export const MOCK_LIMIT_ORDERS: LimitOrder[] = [
-  { id: 'lo-001', pair: 'ALEO/USDCx', side: 'buy', amount: 3000, price: 0.92, filled: 0, status: 'active', timestamp: Date.now() - 3600_000 },
-  { id: 'lo-002', pair: 'ALEO/USDCx', side: 'sell', amount: 5000, price: 1.10, filled: 2100, status: 'partial', timestamp: Date.now() - 10800_000 },
-  { id: 'lo-003', pair: 'ALEO/USDCx', side: 'buy', amount: 1500, price: 0.88, filled: 1500, status: 'filled', timestamp: Date.now() - 21600_000 },
-]
 
 // Analytics data
 export const ANALYTICS_TVL_DATA = [

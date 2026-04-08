@@ -11,7 +11,7 @@ import GlassCard from '../components/shared/GlassCard'
 import PrivacyBadge from '../components/shared/PrivacyBadge'
 import { useOnChainPools } from '../hooks/useOnChainPools'
 import { useDarkPoolState } from '../hooks/useDarkPoolState'
-import { POOLS, formatUsd, formatNumber } from '../data/tokens'
+import { formatUsd, formatNumber } from '../data/tokens'
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
@@ -31,8 +31,9 @@ export default function Analytics() {
   const { pools: onChainPools, totalTVL: realTVL, loading: poolsLoading, metricsCoverage } = useOnChainPools()
   const darkPool = useDarkPoolState()
 
-  const displayPools = onChainPools.length > 0 ? onChainPools : POOLS
-  const totalTVL = realTVL > 0 ? realTVL : POOLS.reduce((s, p) => s + p.tvl, 0)
+  // Real on-chain data only — NO mock fallback
+  const displayPools = onChainPools
+  const totalTVL = realTVL
   const activePools = displayPools.filter((p: any) => (p.reserveA || 0) > 0)
 
   // ─── TVL History (localStorage-persisted, accumulates over time) ─────────

@@ -10,6 +10,7 @@ import {
   prepareCreditsRecordForTx, prepareExactCreditsRecord, prepareUsdcxForTx, prepareRegistryTokenForTx,
   fetchRecordsForTx, getRecordCredits, getPublicAleoBalance, fetchPoolReservesStrict, cpmmOutputWithFee,
   registryTokenIdForSymbol, fetchDarkPoolInitializationState, extractWalletTransactionError, isProgramReachable,
+  API_BASE,
 } from '../lib/aleo'
 import { isRecordManuallySpent, markRecordSpent } from '../lib/spentRecords'
 import {
@@ -32,10 +33,11 @@ import {
 import { addTradeEntry } from '../lib/tradeHistory'
 import type { Venue } from '../lib/router'
 import type { TxStatus } from '../lib/aleo'
+import type { DarkPoolPoolConfig } from '../lib/programs'
 
 export type ProofStatus = 'idle' | 'preparing' | 'proving' | 'verified'
 
-const TESTNET_HEIGHT_URL = 'https://api.explorer.provable.com/v1/testnet/latest/height'
+const TESTNET_HEIGHT_URL = `${API_BASE}/latest/height`
 const DARKPOOL_EPOCH_DURATION = 120
 const DARKPOOL_MIN_BLOCKS_LEFT = 45
 
@@ -366,6 +368,28 @@ export function useSwapExecute() {
     let atomicRouterReady: boolean | null = null
 
     try {
+      const darkPoolShieldProgramsFor = (config: DarkPoolPoolConfig): string[] => {
+        const programs = new Set<string>([config.program])
+
+        if (config.baseInputKind === 'credits' || config.quoteInputKind === 'credits') {
+          programs.add('credits.aleo')
+        }
+
+        if (config.baseInputKind === 'registry' || config.quoteInputKind === 'registry') {
+          programs.add(PROGRAMS.TOKEN_REGISTRY)
+        }
+
+        if (config.baseInputKind === 'usdcx' || config.quoteInputKind === 'usdcx') {
+          programs.add('credits.aleo')
+          programs.add('merkle_tree.aleo')
+          programs.add('test_usdcx_multisig_core.aleo')
+          programs.add('test_usdcx_freezelist.aleo')
+          programs.add(PROGRAMS.USDCX)
+        }
+
+        return Array.from(programs)
+      }
+
       const canUseAtomicRouter = async () => {
         if (atomicRouterReady != null) return atomicRouterReady
         atomicRouterReady = await isProgramReachable(PROGRAMS.ROUTER)
@@ -395,7 +419,7 @@ export function useSwapExecute() {
 
       const maybeRetryWalletSideFailure = async (
         failedTxId: string,
-        scope: 'all' | 'darkpool' | 'orderbook',
+        scope: 'all' | 'darkpool' | 'orderbook' | string[],
         rebuildSubmission: (reason: 'transport' | 'stale') => Promise<void>,
       ): Promise<string | null> => {
         if (walletName !== 'Shield Wallet') return null
@@ -641,6 +665,7 @@ export function useSwapExecute() {
           throw new Error(`Dark Pool contract ${darkPoolConfig.program} is not initialized on-chain yet. Ask an admin to run initialize(admin) before submitting intents.`)
         }
         program = darkPoolConfig.program
+        const darkPoolShieldPrograms = darkPoolShieldProgramsFor(darkPoolConfig)
         const buildDarkPoolSubmission = async (exclusions?: { base?: Set<string>; quote?: Set<string> }) => {
           const nonce = randomNonce()
 
@@ -705,7 +730,7 @@ export function useSwapExecute() {
         setStatusMsg(null)
         setProofStatus('proving')
         if (walletName === 'Shield Wallet') {
-          await ensureShieldPrograms('darkpool').catch((refreshErr) => {
+          await ensureShieldPrograms(darkPoolShieldPrograms).catch((refreshErr) => {
             console.warn('[SwapExecute] Pre-submit Shield refresh skipped for dark pool', refreshErr)
           })
         }
@@ -729,7 +754,7 @@ export function useSwapExecute() {
           setStatusMsg(null)
           setProofStatus('proving')
           if (walletName === 'Shield Wallet') {
-            await ensureShieldPrograms('darkpool').catch((refreshErr) => {
+            await ensureShieldPrograms(darkPoolShieldPrograms).catch((refreshErr) => {
               console.warn('[SwapExecute] Shield refresh skipped during stale-input retry', refreshErr)
             })
           }
@@ -742,7 +767,7 @@ export function useSwapExecute() {
         let finalStatus = await pollTransactionStatus(id, setTxStatus, 3_000, 180_000, walletTxStatus)
         if (finalStatus === 'rejected') {
           const lastUsedRecord = usedRecord
-          const retriedTxId = await maybeRetryWalletSideFailure(id, 'darkpool', async (reason) => {
+          const retriedTxId = await maybeRetryWalletSideFailure(id, darkPoolShieldPrograms, async (reason) => {
             if (reason === 'stale' && lastUsedRecord) {
               markRecordSpent(lastUsedRecord)
             }

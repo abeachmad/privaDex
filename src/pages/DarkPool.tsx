@@ -12,6 +12,7 @@ import { useDarkPoolState } from '../hooks/useDarkPoolState'
 import { useDarkPoolOrders, type DarkPoolIntentEntry, type DarkPoolReceiptEntry } from '../hooks/useDarkPoolOrders'
 import { POOL_IDS } from '../lib/programs'
 import { venueCapabilityReason } from '../lib/venueCapabilities'
+import { explorerTxUrl } from '../lib/aleo'
 
 type Tab = 'submit' | 'pending' | 'settled'
 
@@ -332,7 +333,7 @@ export default function DarkPool() {
                                 </div>
                                 {txId && (
                                   <a
-                                    href={`https://testnet.explorer.provable.com/transaction/${txId}`}
+                                    href={explorerTxUrl(txId)}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="inline-flex items-center gap-1 mt-2 text-[10px] font-mono text-cyan hover:text-cyan/80 transition-colors"
@@ -597,7 +598,7 @@ export default function DarkPool() {
                             </div>
                             {actionState.txId && (
                               <a
-                                href={`https://testnet.explorer.provable.com/transaction/${actionState.txId}`}
+                                href={explorerTxUrl(actionState.txId)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 text-[10px] font-mono text-text-tertiary hover:text-cyan transition-colors"

@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { fetchPoolReserves, fetchPoolMetrics } from '../lib/aleo'
 import { POOL_IDS, POOL_AMM_CONFIG } from '../lib/programs'
 import { getCachedPrice, fetchTokenPrices } from '../lib/prices'
-import { POOLS as MOCK_POOLS, type Pool } from '../data/tokens'
+import { POOLS as POOL_REGISTRY, type Pool } from '../data/tokens'
 
 // Map string pool IDs to numeric POOL_IDS
 const POOL_MAP: Record<string, { numericId: number; program: string; symbolA: string; symbolB: string }> = {
@@ -151,7 +151,7 @@ export interface OnChainPool extends Pool {
   hasLiquidity: boolean
   totalShares: bigint
   onChain: boolean // true = real data, false = mock fallback
-  metricsMode: 'onchain' | 'observed' | 'mock'
+  metricsMode: 'onchain' | 'observed' | 'none'
   lastSwapBlock: number | null
 }
 
@@ -168,10 +168,22 @@ export function useOnChainPools() {
 
       const results: OnChainPool[] = []
 
-      for (const mockPool of MOCK_POOLS) {
-        const mapping = POOL_MAP[mockPool.id]
+      for (const poolMeta of POOL_REGISTRY) {
+        const mapping = POOL_MAP[poolMeta.id]
         if (!mapping) {
-          results.push({ ...mockPool, hasLiquidity: false, totalShares: 0n, onChain: false, metricsMode: 'mock', lastSwapBlock: null })
+          results.push({
+            ...poolMeta,
+            reserveA: 0,
+            reserveB: 0,
+            tvl: 0,
+            volume24h: 0,
+            apr: 0,
+            hasLiquidity: false,
+            totalShares: 0n,
+            onChain: false,
+            metricsMode: 'none',
+            lastSwapBlock: null,
+          })
           continue
         }
 
@@ -189,16 +201,16 @@ export function useOnChainPools() {
             const tvl = resA * priceA + resB * priceB
 
             // Detect swap volume from reserve changes (all users)
-            detectAndLogVolume(mockPool.id, resA, resB, mapping.symbolA, mapping.symbolB)
+            detectAndLogVolume(poolMeta.id, resA, resB, mapping.symbolA, mapping.symbolB)
 
             const volumes = get24hVolumeFromLog()
-            const vol24h = volumes[mockPool.id] || 0
+            const vol24h = volumes[poolMeta.id] || 0
             const feeRate = (reserves.feesBps || 30) / 10_000
             const apr = tvl > 0 ? (vol24h * feeRate * 365) / tvl * 100 : 0
             const metricsMode = metrics.available ? 'onchain' as const : 'observed' as const
 
             results.push({
-              ...mockPool,
+              ...poolMeta,
               reserveA: resA,
               reserveB: resB,
               tvl,
@@ -214,11 +226,11 @@ export function useOnChainPools() {
             const volumes = get24hVolumeFromLog()
             const metricsMode = metrics.available ? 'onchain' as const : 'observed' as const
             results.push({
-              ...mockPool,
+              ...poolMeta,
               reserveA: 0,
               reserveB: 0,
               tvl: 0,
-              volume24h: volumes[mockPool.id] || 0,
+              volume24h: volumes[poolMeta.id] || 0,
               apr: 0,
               hasLiquidity: false,
               totalShares: 0n,
@@ -227,8 +239,22 @@ export function useOnChainPools() {
               lastSwapBlock: metrics.lastSwapBlock,
             })
           }
-        } catch {
-          results.push({ ...mockPool, hasLiquidity: true, totalShares: 0n, onChain: false, metricsMode: 'mock', lastSwapBlock: null })
+        } catch (poolErr) {
+          // RPC failure for this pool — show as unreachable, NEVER use mock data
+          console.error(`[useOnChainPools] Failed to fetch ${poolMeta.id}:`, poolErr)
+          results.push({
+            ...poolMeta,
+            reserveA: 0,
+            reserveB: 0,
+            tvl: 0,
+            volume24h: 0,
+            apr: 0,
+            hasLiquidity: false,
+            totalShares: 0n,
+            onChain: false,
+            metricsMode: 'none',
+            lastSwapBlock: null,
+          })
         }
       }
 
@@ -247,7 +273,20 @@ export function useOnChainPools() {
       )
     } catch (e) {
       console.error('[useOnChainPools] Failed:', e)
-      setPools(MOCK_POOLS.map(p => ({ ...p, hasLiquidity: true, totalShares: 0n, onChain: false, metricsMode: 'mock', lastSwapBlock: null })))
+      // Global RPC failure — show empty pools, NEVER use mock data
+      setPools(POOL_REGISTRY.map(p => ({
+        ...p,
+        reserveA: 0,
+        reserveB: 0,
+        tvl: 0,
+        volume24h: 0,
+        apr: 0,
+        hasLiquidity: false,
+        totalShares: 0n,
+        onChain: false,
+        metricsMode: 'none' as const,
+        lastSwapBlock: null,
+      })))
       setMetricsCoverage('none')
     } finally {
       setLoading(false)

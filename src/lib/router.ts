@@ -18,6 +18,7 @@ import {
   cpmmOutputWithFee,
   isProgramReachable,
   priceImpact as calcPriceImpact,
+  API_BASE,
   type PoolReserves,
 } from "./aleo";
 import { PROGRAMS, POOL_IDS, POOL_AMM_CONFIG, getDarkPoolConfig } from "./programs";
@@ -328,7 +329,7 @@ async function evaluateDarkPool(
 
     // Get current block height for epoch calculation
     const heightRes = await fetch(
-      "https://api.explorer.provable.com/v1/testnet/latest/height",
+      `${API_BASE}/latest/height`,
       { signal: AbortSignal.timeout(5000) },
     );
     if (!heightRes.ok) throw new Error("height fetch failed");

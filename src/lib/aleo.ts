@@ -7,8 +7,16 @@ import { isScannerReady, fetchRecordsFromScanner } from "./recordScanner";
 
 // ─── Config (from env) ───────────────────────────────────────────────────────
 const RPC_URL = import.meta.env.VITE_RPC_URL || "https://api.explorer.provable.com/v1";
-const NETWORK = import.meta.env.VITE_NETWORK || "testnet";
-const API_BASE = `${RPC_URL}/${NETWORK}`;
+export const NETWORK = import.meta.env.VITE_NETWORK || "testnet";
+export const API_BASE = `${RPC_URL}/${NETWORK}`;
+export const EXPLORER_BASE =
+  NETWORK === "mainnet"
+    ? "https://explorer.provable.com"
+    : "https://testnet.explorer.provable.com";
+
+export function explorerTxUrl(txId: string): string {
+  return `${EXPLORER_BASE}/transaction/${txId}`;
+}
 let sdkPromise: Promise<typeof import("@provablehq/sdk")> | null = null;
 let sdkReadyPromise: Promise<typeof import("@provablehq/sdk")> | null = null;
 const programReachabilityCache = new Map<string, Promise<boolean>>();
@@ -94,8 +102,10 @@ export async function executeOnChain(
     privateFee,
     ...(recordIndices && { recordIndices }),
   };
-  console.log("[executeOnChain] TX:", JSON.stringify({ program, function: functionName, inputCount: inputs.length, fee, privateFee, recordIndices }));
-  console.log("[executeOnChain] Inputs:", inputs.map((inp, i) => `[${i}] ${inp.substring(0, 100)}${inp.length > 100 ? '...' : ''}`));
+  if (import.meta.env.DEV) {
+    console.log("[executeOnChain] TX:", JSON.stringify({ program, function: functionName, inputCount: inputs.length, fee, privateFee, recordIndices }));
+    // Inputs intentionally not logged — they contain record plaintexts.
+  }
 
   // Retry logic: Shield Wallet sometimes fails to fetch imported programs
   // (e.g. test_usdcx_multisig_core.aleo) due to transient network issues.

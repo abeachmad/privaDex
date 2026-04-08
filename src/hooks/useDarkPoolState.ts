@@ -2,7 +2,7 @@
  * useDarkPoolState — Fetches real dark pool epoch state from on-chain.
  */
 import { useState, useEffect, useCallback } from 'react'
-import { fetchDarkPoolInitializationState, fetchEpochState, type EpochState } from '../lib/aleo'
+import { fetchDarkPoolInitializationState, fetchEpochState, API_BASE, type EpochState } from '../lib/aleo'
 import { POOL_IDS, getDarkPoolConfig } from '../lib/programs'
 
 export interface DarkPoolState {
@@ -31,7 +31,7 @@ export function useDarkPoolState(poolId: number = POOL_IDS.ALEO_USDCX) {
         setState(prev => ({ ...prev, initialized: false, loading: false }))
         return
       }
-      const res = await fetch('https://api.explorer.provable.com/v1/testnet/latest/height', {
+      const res = await fetch(`${API_BASE}/latest/height`, {
         signal: AbortSignal.timeout(5000),
       })
       if (!res.ok) return

@@ -392,26 +392,26 @@ export function usePoolOperations() {
         }
       }
 
-      // ── Diagnostic logging ──────────────────────────────────────────────
-      console.log('[addLiquidity] === DIAGNOSTIC DUMP ===')
-      console.log('[addLiquidity] Pool:', config.program, 'fn:', config.addLiquidity, 'poolId:', poolId)
-      console.log(
-        '[addLiquidity] requested:',
-        { amountA: requestedAmtA.toString(), amountB: requestedAmtB.toString() },
-        'executing:',
-        { amountA: amtA.toString(), amountB: amtB.toString() },
-        'expectedShares:',
-        expectedShares.toString(),
-      )
-      console.log('[addLiquidity] Reserves:', JSON.stringify({
-        reserveA: freshReserves.reserveA.toString(),
-        reserveB: freshReserves.reserveB.toString(),
-        totalShares: freshReserves.totalShares.toString(),
-      }))
-      console.log('[addLiquidity] Credits record (first 200):', usedRecA?.substring(0, 200))
-      console.log('[addLiquidity] Token record (first 200):', usedRecB?.substring(0, 200))
-      console.log('[addLiquidity] MerkleProofs:', merkleProofs?.substring(0, 100))
-      inputs.forEach((inp, i) => console.log(`[addLiquidity] Input[${i}] (${inp.length} chars):`, inp.substring(0, 150)))
+      // ── Diagnostic logging (DEV ONLY — never log record plaintexts in production) ──
+      if (import.meta.env.DEV) {
+        console.log('[addLiquidity] === DIAGNOSTIC DUMP (dev only) ===')
+        console.log('[addLiquidity] Pool:', config.program, 'fn:', config.addLiquidity, 'poolId:', poolId)
+        console.log(
+          '[addLiquidity] requested:',
+          { amountA: requestedAmtA.toString(), amountB: requestedAmtB.toString() },
+          'executing:',
+          { amountA: amtA.toString(), amountB: amtB.toString() },
+          'expectedShares:',
+          expectedShares.toString(),
+        )
+        console.log('[addLiquidity] Reserves:', JSON.stringify({
+          reserveA: freshReserves.reserveA.toString(),
+          reserveB: freshReserves.reserveB.toString(),
+          totalShares: freshReserves.totalShares.toString(),
+        }))
+        // NOTE: Record plaintexts and merkle proofs intentionally NOT logged
+        // to avoid leaking private state via browser console.
+      }
 
       setStatusMsg('Executing on-chain...')
       let id: string

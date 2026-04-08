@@ -11,6 +11,11 @@ import { PROGRAMS, REGISTRY_TOKEN_IDS } from '../lib/programs'
 import { setCachedRecords } from '../lib/recordCache'
 import { isScannerConfigured, registerViewKey, resetScanner } from '../lib/recordScanner'
 
+// ─── Network configuration ──────────────────────────────────────────────────
+// Reads VITE_NETWORK from .env (testnet | mainnet)
+const NETWORK_NAME = (import.meta.env.VITE_NETWORK || 'testnet').toLowerCase()
+const ACTIVE_NETWORK: Network = NETWORK_NAME === 'mainnet' ? Network.MAINNET : Network.TESTNET
+
 // ─── Programs to register with Shield Wallet ─────────────────────────────────
 const SHIELDED_USDCX_PROGRAMS = Array.from(new Set([
   'credits.aleo',
@@ -88,7 +93,7 @@ interface WalletState {
   wallets: any[]
   selectWallet: any
   connectWallet: (walletName: string) => Promise<void>
-  ensureShieldPrograms: (scope?: 'all' | 'darkpool' | 'orderbook') => Promise<void>
+  ensureShieldPrograms: (scope?: 'all' | 'darkpool' | 'orderbook' | string[]) => Promise<void>
 }
 
 const WalletCtx = createContext<WalletState | null>(null)
@@ -127,8 +132,8 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
   const walletName = wallet?.adapter?.name || null
   const walletIcon = wallet?.adapter?.icon || null
 
-  // Debug: log wallet state changes
-  if (typeof window !== 'undefined') {
+  // Debug: log wallet state changes (dev only — address is sensitive)
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
     console.log('[Wallet State]', { connected, connecting, address: aleoAddress, walletName })
   }
 
@@ -143,28 +148,34 @@ function WalletContextProvider({ children }: { children: ReactNode }) {
       selectWallet(name)
       // Wait for React to process selectWallet state change
       await new Promise(r => setTimeout(r, 100))
-      await aleoConnect(Network.TESTNET)
+      await aleoConnect(ACTIVE_NETWORK)
     } catch (e: any) {
       console.error('[Wallet] Connect failed:', e)
       throw e
     }
   }, [selectWallet, aleoConnect])
 
-  const ensureShieldPrograms = useCallback(async (scope: 'all' | 'darkpool' | 'orderbook' = 'all') => {
+  const ensureShieldPrograms = useCallback(async (scope: 'all' | 'darkpool' | 'orderbook' | string[] = 'all') => {
     if (!connected || walletName !== 'Shield Wallet') return
 
     const shield = (window as any).shield
     if (!shield?.connect) return
 
-    const programs = scope === 'darkpool'
-      ? DARKPOOL_REQUIRED_PROGRAMS
-      : scope === 'orderbook'
-        ? ORDERBOOK_REQUIRED_PROGRAMS
-        : REGISTERED_PROGRAMS
+    const programs = Array.isArray(scope)
+      ? Array.from(new Set(scope.filter(Boolean)))
+      : scope === 'darkpool'
+        ? DARKPOOL_REQUIRED_PROGRAMS
+        : scope === 'orderbook'
+          ? ORDERBOOK_REQUIRED_PROGRAMS
+          : REGISTERED_PROGRAMS
 
     try {
-      await shield.connect(Network.TESTNET, DecryptPermission.AutoDecrypt, programs)
-      console.log('[Wallet] Refreshed Shield programs', { scope, programCount: programs.length })
+      await shield.connect(ACTIVE_NETWORK, DecryptPermission.AutoDecrypt, programs)
+      console.log('[Wallet] Refreshed Shield programs', {
+        scope: Array.isArray(scope) ? 'custom' : scope,
+        programCount: programs.length,
+        programs,
+      })
     } catch (e) {
       console.warn('[Wallet] Shield program refresh failed:', e)
       throw e
@@ -349,13 +360,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   return (
     <AleoWalletProvider
       wallets={wallets}
-      network={Network.TESTNET}
+      network={ACTIVE_NETWORK}
       decryptPermission={DecryptPermission.AutoDecrypt}
       programs={REGISTERED_PROGRAMS}
       autoConnect={false}
       onError={(err) => console.error('[PrivaDEX Wallet]', err)}
     >
-      <WalletModalProvider network={Network.TESTNET}>
+      <WalletModalProvider network={ACTIVE_NETWORK}>
         <WalletContextProvider>
           {children}
         </WalletContextProvider>

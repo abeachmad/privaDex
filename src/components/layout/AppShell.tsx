@@ -207,7 +207,9 @@ export default function AppShell() {
               </div>
               <span className="font-display text-sm text-text-tertiary">PrivaDEX</span>
               <span className="text-text-ghost text-xs">·</span>
-              <span className="text-text-ghost text-xs font-mono">Aleo Testnet</span>
+              <span className="text-text-ghost text-xs font-mono">
+                Aleo {(import.meta.env.VITE_NETWORK || 'testnet').replace(/^./, c => c.toUpperCase())}
+              </span>
             </div>
             <div className="flex items-center gap-4 text-xs text-text-tertiary">
               <span>Privacy-First</span>

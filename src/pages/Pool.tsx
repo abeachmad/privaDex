@@ -7,7 +7,7 @@ import PrivacyBadge from '../components/shared/PrivacyBadge'
 import { useWallet } from '../context/WalletContext'
 import { usePoolOperations } from '../hooks/usePoolOperations'
 import { useOnChainPools } from '../hooks/useOnChainPools'
-import { useMyLpPositions } from '../hooks/useMyLpPositions'
+import { useMyLpPositions, type LpPositionWithRecord } from '../hooks/useMyLpPositions'
 import { POOL_IDS } from '../lib/programs'
 import { formatUsd, formatNumber, formatAmount } from '../data/tokens'
 
@@ -25,7 +25,7 @@ const POOL_ID_MAP: Record<string, number> = {
 
 export default function PoolPage() {
   const { connected, connect, shieldActive, toggleShield, balances } = useWallet()
-  const { loading, txStatus, txId, error, statusMsg, reset, addLiquidity } = usePoolOperations()
+  const { loading, txStatus, txId, error, statusMsg, reset, addLiquidity, removeLiquidity } = usePoolOperations()
   const { pools: POOLS, totalTVL, metricsCoverage } = useOnChainPools()
   const { positions: lpPositions, loading: lpLoading, refetch: refetchLp } = useMyLpPositions()
 
@@ -37,6 +37,10 @@ export default function PoolPage() {
   // Track which input was last edited to avoid circular updates
   const [lastEdited, setLastEdited] = useState<'A' | 'B' | null>(null)
 
+  // Remove liquidity modal state
+  const [showRemove, setShowRemove] = useState<LpPositionWithRecord | null>(null)
+  const [removePercent, setRemovePercent] = useState<number>(100)
+
   // Track whether we've reached finalized so we can show success then close
   const [showSuccess, setShowSuccess] = useState(false)
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -47,17 +51,48 @@ export default function PoolPage() {
       setShowSuccess(true)
       closeTimerRef.current = setTimeout(() => {
         setShowAddLiquidity(null)
+        setShowRemove(null)
         setAmountA('')
         setAmountB('')
         setLastEdited(null)
         setShowSuccess(false)
         reset()
+        refetchLp()
       }, 2000)
     }
     return () => {
       if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
     }
-  }, [txStatus, reset])
+  }, [txStatus, reset, refetchLp])
+
+  // Remove liquidity handler
+  const handleRemoveLiquidity = async () => {
+    if (!showRemove || loading) return
+    const sharesToRemove = (showRemove.shares * BigInt(removePercent)) / 100n
+    if (sharesToRemove <= 0n) return
+
+    // Compute expected outputs proportional to shares being removed
+    // with 2% slippage protection (min 98% of expected)
+    const decimals = 6
+    const expectedA = BigInt(Math.floor(showRemove.tokenAAmount * (removePercent / 100) * 10 ** decimals))
+    const expectedB = BigInt(Math.floor(showRemove.tokenBAmount * (removePercent / 100) * 10 ** decimals))
+    const minA = (expectedA * 98n) / 100n
+    const minB = (expectedB * 98n) / 100n
+
+    await removeLiquidity(
+      showRemove.numericPoolId,
+      showRemove.recordPlaintext,
+      sharesToRemove,
+      minA,
+      minB,
+    )
+  }
+
+  const handleCloseRemoveModal = () => {
+    setShowRemove(null)
+    setRemovePercent(100)
+    if (!loading) reset()
+  }
 
   // Auto-calculate paired token amount based on pool reserve ratio
   useEffect(() => {
@@ -312,7 +347,11 @@ export default function PoolPage() {
                               <Plus size={13} />
                               Add Liquidity
                             </button>
-                            <button className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border bg-glass text-text-secondary text-xs hover:border-border-md transition-colors press-scale">
+                            <button
+                              onClick={() => setTab('positions')}
+                              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border border-border bg-glass text-text-secondary text-xs hover:border-border-md transition-colors press-scale"
+                              title="Switch to My Positions to remove liquidity"
+                            >
                               <Minus size={13} />
                               Remove
                             </button>
@@ -420,7 +459,10 @@ export default function PoolPage() {
                     >
                       Add More
                     </button>
-                    <button className="flex-1 py-2 rounded-lg border border-border text-xs text-text-secondary hover:text-text-primary hover:border-border-md transition-all press-scale">
+                    <button
+                      onClick={() => { setShowRemove(pos); setRemovePercent(100) }}
+                      className="flex-1 py-2 rounded-lg border border-border text-xs text-text-secondary hover:text-danger hover:border-danger/40 transition-all press-scale"
+                    >
                       Remove
                     </button>
                   </div>
@@ -641,6 +683,190 @@ export default function PoolPage() {
                   </div>
                 )
               })()}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Remove Liquidity Modal */}
+      <AnimatePresence>
+        {showRemove && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-void/60 backdrop-blur-sm"
+              onClick={handleCloseRemoveModal}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: 'spring', duration: 0.4, bounce: 0 }}
+              className="fixed top-[50%] left-[50%] -translate-x-[50%] -translate-y-[50%] z-50 w-full max-w-md px-4"
+            >
+              <div className="bg-carbon border border-border-md rounded-2xl shadow-deep overflow-hidden">
+                <div className="flex items-center justify-between px-6 py-5 border-b border-border">
+                  <h3 className="font-display text-lg text-text-primary">Remove Liquidity</h3>
+                  <button onClick={handleCloseRemoveModal} className="p-1.5 rounded-lg hover:bg-glass-md transition-colors">
+                    <X size={16} className="text-text-tertiary" />
+                  </button>
+                </div>
+                <div className="p-6 space-y-5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex -space-x-2">
+                      <TokenIcon symbol={showRemove.tokenA} />
+                      <TokenIcon symbol={showRemove.tokenB} />
+                    </div>
+                    <span className="font-medium text-text-primary">{showRemove.tokenA} / {showRemove.tokenB}</span>
+                  </div>
+
+                  {/* Percent slider */}
+                  <div className="p-4 rounded-xl border border-border bg-glass">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-[10px] font-mono text-text-tertiary uppercase tracking-wider">Amount to remove</span>
+                      <span className="font-mono text-xl text-text-primary tabular-nums">{removePercent}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="100"
+                      value={removePercent}
+                      onChange={e => setRemovePercent(Number(e.target.value))}
+                      disabled={loading}
+                      className="w-full accent-emerald cursor-pointer disabled:opacity-50"
+                    />
+                    <div className="flex gap-2 mt-3">
+                      {[25, 50, 75, 100].map(pct => (
+                        <button
+                          key={pct}
+                          onClick={() => setRemovePercent(pct)}
+                          disabled={loading}
+                          className={`flex-1 py-1.5 rounded-lg text-[11px] font-mono transition-all press-scale disabled:opacity-50 ${
+                            removePercent === pct
+                              ? 'bg-emerald-ghost border border-emerald/20 text-emerald'
+                              : 'border border-border text-text-tertiary hover:text-text-primary'
+                          }`}
+                        >
+                          {pct}%
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Expected outputs */}
+                  <div className="p-4 rounded-xl border border-border bg-glass space-y-2">
+                    <div className="text-[10px] font-mono text-text-tertiary uppercase tracking-wider mb-2">You will receive</div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <TokenIcon symbol={showRemove.tokenA} size="sm" />
+                        <span className="text-sm text-text-secondary">{showRemove.tokenA}</span>
+                      </div>
+                      <span className="font-mono text-sm text-text-primary tabular-nums">
+                        {formatAmount(showRemove.tokenAAmount * (removePercent / 100))}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <TokenIcon symbol={showRemove.tokenB} size="sm" />
+                        <span className="text-sm text-text-secondary">{showRemove.tokenB}</span>
+                      </div>
+                      <span className="font-mono text-sm text-text-primary tabular-nums">
+                        {formatAmount(showRemove.tokenBAmount * (removePercent / 100))}
+                      </span>
+                    </div>
+                    <div className="border-t border-border pt-2 mt-2 flex justify-between text-[11px]">
+                      <span className="text-text-tertiary">Estimated value</span>
+                      <span className="font-mono text-text-primary">{formatUsd(showRemove.valueUsd * (removePercent / 100))}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-glass border border-border">
+                    <Lock size={12} className="text-emerald shrink-0" />
+                    <span className="text-[11px] text-text-tertiary">2% slippage protection applied to minimum outputs</span>
+                  </div>
+
+                  {/* Status messages */}
+                  <AnimatePresence mode="wait">
+                    {statusMsg && !showSuccess && (
+                      <motion.div
+                        key="status"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-border bg-glass"
+                      >
+                        <Loader2 size={13} className="text-emerald animate-spin shrink-0" />
+                        <span className="text-[11px] text-text-secondary font-mono">{statusMsg}</span>
+                      </motion.div>
+                    )}
+
+                    {txStatus === 'pending' && !showSuccess && (
+                      <motion.div
+                        key="pending"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-emerald/20 bg-emerald-ghost"
+                      >
+                        <Loader2 size={13} className="text-emerald animate-spin shrink-0" />
+                        <span className="text-[11px] text-emerald font-mono">
+                          Removing liquidity...{txId ? ` ${txId.slice(0, 12)}...` : ''}
+                        </span>
+                      </motion.div>
+                    )}
+
+                    {showSuccess && (
+                      <motion.div
+                        key="success"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-positive/20 bg-positive/5"
+                      >
+                        <CheckCircle size={13} className="text-positive shrink-0" />
+                        <span className="text-[11px] text-positive font-mono">
+                          Liquidity removed!{txId ? ` TX: ${txId.slice(0, 12)}...` : ''}
+                        </span>
+                      </motion.div>
+                    )}
+
+                    {error && !loading && (
+                      <motion.div
+                        key="error"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-negative/20 bg-negative/5"
+                      >
+                        <AlertTriangle size={13} className="text-negative shrink-0" />
+                        <span className="text-[11px] text-negative font-mono">{error}</span>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <button
+                    onClick={handleRemoveLiquidity}
+                    disabled={loading || showSuccess || removePercent < 1}
+                    className={`w-full py-3.5 rounded-xl font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2 ${
+                      showSuccess
+                        ? 'bg-positive text-obsidian'
+                        : loading
+                          ? 'bg-emerald/60 text-obsidian/70 cursor-not-allowed'
+                          : 'bg-danger text-white press-scale hover:bg-danger/90'
+                    }`}
+                  >
+                    {loading && !showSuccess && <Loader2 size={14} className="animate-spin" />}
+                    {showSuccess && <CheckCircle size={14} />}
+                    {showSuccess
+                      ? 'Success!'
+                      : loading
+                        ? 'Processing...'
+                        : `Remove ${removePercent}%`}
+                  </button>
+                </div>
+              </div>
             </motion.div>
           </>
         )}

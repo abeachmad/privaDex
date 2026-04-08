@@ -14,6 +14,7 @@ import { PROGRAMS, POOL_IDS, POOL_AMM_CONFIG, REGISTRY_TOKEN_IDS } from '../lib/
 import { isRecordManuallySpent } from '../lib/spentRecords'
 import { getTradeHistory, type TradeEntry } from '../lib/tradeHistory'
 import { fetchTokenPrices, getCachedPrice } from '../lib/prices'
+import { calculateFeeEarned } from '../lib/lpTracker'
 
 export interface LPPositionData {
   poolId: number
@@ -24,6 +25,7 @@ export interface LPPositionData {
   tokenAAmount: number
   tokenBAmount: number
   sharePercent: number
+  earnedFees: number
 }
 
 export function usePortfolioData() {
@@ -66,6 +68,9 @@ export function usePortfolioData() {
                 const valueUsd = tokenAAmount * priceA + tokenBAmount * priceB
                 const sharePercent = Number(shares * 10000n / reserves.totalShares) / 100
 
+                const stringPoolId = `${config.symbolA.toLowerCase()}-${config.symbolB.toLowerCase()}`
+                const earnedFees = address ? calculateFeeEarned(address, stringPoolId, valueUsd) : 0
+
                 lpResults.push({
                   poolId,
                   tokenA: config.symbolA,
@@ -75,6 +80,7 @@ export function usePortfolioData() {
                   tokenAAmount,
                   tokenBAmount,
                   sharePercent,
+                  earnedFees,
                 })
               }
             } catch { /* pool reserves unavailable */ }

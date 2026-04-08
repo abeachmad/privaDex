@@ -9,7 +9,7 @@ import PrivacyBadge from '../components/shared/PrivacyBadge'
 import { useWallet } from '../context/WalletContext'
 import { usePortfolioData } from '../hooks/usePortfolioData'
 import {
-  TOKENS, MOCK_LP_POSITIONS, MOCK_DARK_ORDERS, MOCK_LIMIT_ORDERS,
+  TOKENS,
   formatUsd, formatNumber, timeAgo,
 } from '../data/tokens'
 
@@ -36,19 +36,17 @@ export default function Portfolio() {
     )
   }
 
-  // Map real LP positions to the UI shape, falling back to mock data when empty
-  const lpPositions = realLpPositions.length > 0
-    ? realLpPositions.map(pos => ({
-        poolId: String(pos.poolId),
-        tokenA: pos.tokenA,
-        tokenB: pos.tokenB,
-        sharePercent: pos.sharePercent,
-        valueUsd: pos.valueUsd,
-        tokenAAmount: pos.tokenAAmount,
-        tokenBAmount: pos.tokenBAmount,
-        earnedFees: 0, // not available from on-chain yet
-      }))
-    : MOCK_LP_POSITIONS
+  // Real LP positions only — NO mock fallback
+  const lpPositions = realLpPositions.map(pos => ({
+    poolId: String(pos.poolId),
+    tokenA: pos.tokenA,
+    tokenB: pos.tokenB,
+    sharePercent: pos.sharePercent,
+    valueUsd: pos.valueUsd,
+    tokenAAmount: pos.tokenAAmount,
+    tokenBAmount: pos.tokenBAmount,
+    earnedFees: pos.earnedFees,
+  }))
 
   const totalBalance = Object.entries(balances).reduce((sum, [sym, bal]) => {
     const prices: Record<string, number> = { ALEO: 0.065, USDCx: 1, BTCx: 68000, ETHx: 1980 }
@@ -231,27 +229,9 @@ export default function Portfolio() {
               <BookOpen size={14} className="text-gold" />
               <span className="text-xs font-mono text-text-tertiary uppercase tracking-wider">Open Orders</span>
             </div>
-            <div className="space-y-3">
-              {MOCK_LIMIT_ORDERS.filter(o => o.status === 'active' || o.status === 'partial').map(order => (
-                <div key={order.id} className="flex items-center justify-between p-3 rounded-lg bg-glass border border-border">
-                  <div>
-                    <div className="text-xs font-medium text-text-primary">
-                      <span className={order.side === 'buy' ? 'text-positive' : 'text-danger'}>
-                        {order.side.toUpperCase()}
-                      </span>{' '}
-                      {formatNumber(order.amount, 0)} ALEO
-                    </div>
-                    <div className="text-[10px] text-text-ghost font-mono">
-                      @ ${formatNumber(order.price, 4)} · {timeAgo(order.timestamp)}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-mono text-xs text-text-primary tabular-nums">
-                      {((order.filled / order.amount) * 100).toFixed(0)}% filled
-                    </div>
-                  </div>
-                </div>
-              ))}
+            <div className="text-center py-6">
+              <span className="text-xs text-text-ghost font-mono">No open orders</span>
+              <div className="text-[10px] text-text-ghost mt-1">Order book indexer not yet integrated</div>
             </div>
           </GlassCard>
         </motion.div>
@@ -310,24 +290,10 @@ export default function Portfolio() {
                   </div>
                 ))
               ) : (
-                /* Fallback: mock dark pool orders */
-                MOCK_DARK_ORDERS.slice(0, 3).map(order => (
-                  <div key={order.id} className="flex items-center justify-between p-3 rounded-lg bg-glass border border-border">
-                    <div>
-                      <div className="text-xs font-medium text-text-primary">
-                        {order.side === 'buy' ? 'Buy' : 'Sell'} · Epoch #{order.epoch}
-                      </div>
-                      <div className="text-[10px] text-text-ghost font-mono">{timeAgo(order.timestamp)}</div>
-                    </div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${
-                      order.status === 'claimable' ? 'bg-gold-muted text-gold' :
-                      order.status === 'pending' ? 'bg-cyan-muted text-cyan' :
-                      'bg-emerald-ghost text-emerald'
-                    }`}>
-                      {order.status}
-                    </span>
-                  </div>
-                ))
+                <div className="text-center py-6">
+                  <span className="text-xs text-text-ghost font-mono">No trade history</span>
+                  <div className="text-[10px] text-text-ghost mt-1">Execute a swap to see activity here</div>
+                </div>
               )}
 
               {hasTrades && trades.length === 0 && (
