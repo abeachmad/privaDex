@@ -223,13 +223,13 @@ All dark pool contracts feature:
 
 ### Other Programs
 
-| Program | Purpose |
-|---|---|
-| `privadex_orderbook_v4.aleo` | Limit order book (ALEO/USDCx) |
-| `privadex_token_v2.aleo` | Private token wrapper with ALEO escrow |
-| `privadex_router_v2.aleo` | Atomic multi-hop router (pending deployment) |
-| `test_usdcx_stablecoin.aleo` | USDCx stablecoin (shared infrastructure) |
-| `token_registry.aleo` | BTCx/ETHx token registry (shared infrastructure) |
+| Program | Purpose | Status |
+|---|---|---|
+| `privadex_orderbook_v4.aleo` | Limit order book (ALEO/USDCx) | ✅ Deployed |
+| `privadex_token_v2.aleo` | Private token wrapper with ALEO escrow | ✅ Deployed |
+| `privadex_router_v2.aleo` | Atomic multi-hop router | ❌ Blocked by snarkOS cross-program simulation bug — direct AMM swap fallback used instead |
+| `test_usdcx_stablecoin.aleo` | USDCx stablecoin | Shared infrastructure |
+| `token_registry.aleo` | BTCx/ETHx token registry | Shared infrastructure |
 
 ## Key Technical Details
 
@@ -311,6 +311,8 @@ Contract workspace lives in `contracts/`. All contracts use Leo 4.0 syntax.
 
 ## Scripts
 
+### Frontend
+
 ```bash
 npm run dev              # Start dev server (port 5173)
 npm run build            # Production build (tsc + vite)
@@ -318,14 +320,36 @@ npm run preview          # Preview production build
 npm run lint             # ESLint
 ```
 
+### Dark Pool Operations
+
+```bash
+npm run darkpool:init            # Initialize dark pool contracts (one-time, admin only)
+npm run darkpool:init:check      # Check initialization status without executing
+npm run darkpool:autosettle      # Run the autosettle keeper loop (settles expired epochs)
+npm run darkpool:autosettle:once # Run one settlement cycle and exit
+npm run darkpool:settle          # Manually settle a specific epoch
+npm run darkpool:claim-buy       # Claim a buy fill from a settled epoch
+npm run darkpool:cancel-buy      # Cancel a pending buy intent
+```
+
+See `docs/darkpool-autosettle.md` for keeper operations.
+
+### Contracts
+
+```bash
+npm run contracts:active         # Print active program IDs from .env
+```
+
 ## Wallet Support
 
 Currently supports **Shield Wallet** (`@provablehq/aleo-wallet-adaptor-shield`).
 
 The app requires:
-- Aleo Testnet connection
+- Aleo network connection (configured via `VITE_NETWORK`, defaults to `testnet`)
 - `AutoDecrypt` permission for record scanning
-- Public ALEO balance for transaction fees
+- Public ALEO balance for transaction fees (1.5 ALEO per tx)
+
+> **Note:** Dependency `@provablehq/aleo-wallet-adaptor-*@^0.3.0-alpha.3` is still in alpha. Wallet behavior may change with future releases.
 
 ## License
 
