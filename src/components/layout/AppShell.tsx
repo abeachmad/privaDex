@@ -20,7 +20,7 @@ import {
 } from 'lucide-react'
 import { useWallet } from '../../context/WalletContext'
 import { shortenAddress } from '../../data/tokens'
-import privadexLogo from '../../assets/tokens/privadex-logo.png'
+import privadexLogo from '../../assets/tokens/privadex-logo-v2.png'
 import WalletModal from '../shared/WalletModal'
 import CryptoTicker from '../shared/CryptoTicker'
 

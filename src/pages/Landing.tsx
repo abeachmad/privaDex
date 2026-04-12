@@ -5,7 +5,7 @@ import {
   ArrowLeftRight, ChevronRight, Layers, Binary, Fingerprint, GitBranch,
 } from 'lucide-react'
 import { TOKENS } from '../data/tokens'
-import privadexLogo from '../assets/tokens/privadex-logo.png'
+import privadexLogo from '../assets/tokens/privadex-logo-v2.png'
 
 const FADE_UP = {
   initial: { opacity: 0, y: 24 },
