@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://priva-dex.vercel.app/"><strong>Live Demo</strong></a>
+  <a href="https://privadex.vercel.app/"><strong>Live Demo</strong></a>
 </p>
 
 ## Tech Stack

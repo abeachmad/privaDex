@@ -2,7 +2,7 @@
 
 ## Updates in this Wave
 
-**Live Demo:** https://priva-dex.vercel.app/
+**Live Demo:** https://privadex.vercel.app/
 
 This is our first submission. PrivaDEX is a privacy-first decentralized exchange built entirely on Aleo. Unlike traditional DEXs where every trade is publicly visible, PrivaDEX uses zero-knowledge proofs to keep trade size, price, and wallet identity fully shielded. The protocol consists of 10 Leo smart contracts deployed on Aleo testnet covering three execution venues: a constant-product AMM (6 pool pairs), an epoch-based dark pool, and a shielded limit order book.
 
