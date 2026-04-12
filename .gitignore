@@ -20,6 +20,9 @@ contracts/*/build/
 contracts/*/*.bak
 contracts/*/*.full
 
+# Local-only submission drafts (do not push)
+docs/wave-5-submission.md
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
