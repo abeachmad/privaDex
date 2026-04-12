@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/privadex-logo.png" alt="PrivaDEX" width="120" />
+  <img src="src/assets/tokens/privadex-logo-v2.png" alt="PrivaDEX" width="120" />
 </p>
 
 <h1 align="center">PrivaDEX</h1>
